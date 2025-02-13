@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS for SSE
+# Configure CORS for SSE and VAPI
 CORS(app, resources={
     r"/*": {
         "origins": "*",
@@ -38,6 +38,45 @@ def stream_openai_response(message, is_voice=False):
     except Exception as e:
         error_data = json.dumps({"error": str(e)})
         yield f"data: {error_data}\n\n"
+
+@app.route('/v1/chat/completions', methods=['POST'])
+def vapi_chat():
+    """VAPI LLM endpoint for chat completions"""
+    try:
+        data = request.get_json()
+        if not data or 'messages' not in data:
+            return jsonify({"error": "Invalid request format"}), 400
+
+        # Get the last user message
+        last_message = next((msg['content'] for msg in reversed(data['messages']) 
+                           if msg['role'] == 'user'), None)
+
+        if not last_message:
+            return jsonify({"error": "No user message found"}), 400
+
+        # Process through our assistant
+        assistant = OpenAIAssistant()
+        full_response = ""
+
+        # Collect the full response
+        for response in assistant.stream_response(last_message, is_voice=True):
+            if response.get("type") == "error":
+                return jsonify({"error": response["content"]}), 500
+            full_response += response.get("content", "")
+
+        # Format response for VAPI
+        return jsonify({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": full_response.strip()
+                }
+            }]
+        })
+
+    except Exception as e:
+        logger.error(f"Error in VAPI endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/stream', methods=['POST'])
 def stream():
