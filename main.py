@@ -1,7 +1,6 @@
 import monkey  # noqa: F401
 import os
 import logging
-from flask_sockets import Sockets
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from app import app
