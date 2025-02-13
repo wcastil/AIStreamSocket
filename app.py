@@ -3,6 +3,7 @@ import logging
 from flask import Flask, render_template
 from flask_sockets import Sockets
 from database import init_db
+from geventwebsocket.websocket import WebSocket
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -23,7 +24,12 @@ from websocket_handler import handle_websocket  # noqa: E402
 
 # WebSocket route
 @sockets.route('/stream')
-def stream_socket(ws):
+def stream_socket(ws: WebSocket):
+    """Handle WebSocket connections"""
+    if not ws:
+        logger.error("No WebSocket connection available")
+        return
+
     handle_websocket(ws)
 
 # Web interface route
