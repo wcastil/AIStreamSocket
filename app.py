@@ -14,19 +14,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS for SSE and VAPI
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "supports_credentials": True
-    }
-})
+# Configure CORS for all routes
+CORS(app)
+
+@app.route('/')
+def index():
+    """Render the chat interface"""
+    logger.info("Serving index page")
+    return render_template('index.html')
 
 def stream_openai_response(message, is_voice=False):
     """Stream OpenAI responses using server-sent events"""
     assistant = OpenAIAssistant()
     try:
-        for response in assistant.stream_response(message, is_voice=is_voice):
+        for response in assistant.stream_response(message):
             data = json.dumps({
                 "type": response.get("type", "text"),
                 "chunk": response.get("content", ""),
@@ -39,6 +40,29 @@ def stream_openai_response(message, is_voice=False):
     except Exception as e:
         error_data = json.dumps({"error": str(e)})
         yield f"data: {error_data}\n\n"
+
+@app.route('/stream', methods=['POST'])
+def stream():
+    """SSE endpoint for streaming responses"""
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+
+    data = request.get_json()
+    message = data.get('message')
+    is_voice = data.get('is_voice', False)
+
+    if not message:
+        return jsonify({"error": "Message field is required"}), 400
+
+    return Response(
+        stream_openai_response(message, is_voice=is_voice),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 @app.route('/v1/chat/completions', methods=['POST'])
 def vapi_chat():
@@ -53,24 +77,14 @@ def vapi_chat():
                 }
             }), 400
 
-        # Collect all messages to maintain conversation context
-        messages = data['messages']
-        if not messages or not isinstance(messages, list):
-            return jsonify({
-                "error": {
-                    "message": "Messages must be a non-empty array",
-                    "type": "invalid_request_error"
-                }
-            }), 400
-
         # Process through our assistant
         assistant = OpenAIAssistant()
 
         def generate():
             try:
                 # Get the last user message as the current query
-                last_message = next((msg['content'] for msg in reversed(messages) 
-                                if msg['role'] == 'user'), None)
+                last_message = next((msg['content'] for msg in reversed(data['messages']) 
+                                   if msg['role'] == 'user'), None)
 
                 if not last_message:
                     error_response = json.dumps({
@@ -82,7 +96,7 @@ def vapi_chat():
                     yield f"data: {error_response}\n\n"
                     return
 
-                # Create a new thread and process the message
+                # Process through the assistant
                 for response in assistant.stream_response(last_message):
                     if response.get("type") == "error":
                         error_response = json.dumps({
@@ -95,8 +109,6 @@ def vapi_chat():
                         return
 
                     content = response.get("content", "")
-
-                    # Format each chunk as a delta update
                     chunk_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
                         "object": "chat.completion.chunk",
@@ -156,35 +168,6 @@ def vapi_chat():
             }
         }), 500
 
-@app.route('/stream', methods=['POST'])
-def stream():
-    """SSE endpoint for streaming responses"""
-    if not request.is_json:
-        return jsonify({"error": "Content-Type must be application/json"}), 400
-
-    data = request.get_json()
-    message = data.get('message')
-    is_voice = data.get('is_voice', False)
-
-    if not message:
-        return jsonify({"error": "Message field is required"}), 400
-
-    return Response(
-        stream_openai_response(message, is_voice=is_voice),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no'
-        }
-    )
-
-@app.route('/')
-def index():
-    """Render the chat interface"""
-    return render_template('index.html')
-
-# Error handlers
 @app.errorhandler(404)
 def not_found_error(error):
     logger.error("404 error: %s", error)
@@ -195,5 +178,6 @@ def internal_error(error):
     logger.error("500 error: %s", error)
     return "Internal server error", 500
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
