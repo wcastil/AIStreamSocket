@@ -2,8 +2,7 @@ import os
 import logging
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
-from openai_assistant import OpenAIAssistant # Assuming this is defined elsewhere
-from database import init_db
+from openai_assistant import OpenAIAssistant
 import json
 
 # Configure logging
@@ -22,16 +21,14 @@ CORS(app, resources={
     }
 })
 
-# Initialize database
-init_db(app)
-
-def stream_openai_response(message):
+def stream_openai_response(message, is_voice=False):
     """Stream OpenAI responses using server-sent events"""
     assistant = OpenAIAssistant()
     try:
-        for chunk in assistant.stream_response(message):
+        for response in assistant.stream_response(message, is_voice=is_voice):
             data = json.dumps({
-                "chunk": chunk,
+                "type": response.get("type", "text"),
+                "chunk": response.get("content", ""),
                 "done": False
             })
             yield f"data: {data}\n\n"
@@ -50,12 +47,13 @@ def stream():
 
     data = request.get_json()
     message = data.get('message')
+    is_voice = data.get('is_voice', False)
 
     if not message:
         return jsonify({"error": "Message field is required"}), 400
 
     return Response(
-        stream_openai_response(message),
+        stream_openai_response(message, is_voice=is_voice),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
