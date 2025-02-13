@@ -35,10 +35,11 @@
                 this.ws = null;
                 this.reconnectAttempts = 0;
                 this.maxReconnectAttempts = 5;
-                this.reconnectDelay = 1000;
-                this.maxReconnectDelay = 10000;
                 this.connected = false;
                 this.messageQueue = [];
+                this.lastPongTime = Date.now();
+                this.pingInterval = null;
+                this.pongTimeout = null;
 
                 this.connect();
             }
@@ -54,46 +55,48 @@
                     return;
                 }
 
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/stream`;
-
                 try {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/stream`;
                     console.log('Connecting to WebSocket:', wsUrl);
+
                     updateConnectionStatus('Connecting...');
                     this.ws = new WebSocket(wsUrl);
-                    this.setupHandlers();
+                    this.setupEventHandlers();
                 } catch (error) {
                     console.error('Failed to create WebSocket:', error);
                     this.scheduleReconnect();
                 }
             }
 
-            setupHandlers() {
+            setupEventHandlers() {
                 this.ws.onopen = () => {
                     console.log('WebSocket connected');
                     this.connected = true;
                     this.reconnectAttempts = 0;
-                    this.reconnectDelay = 1000;
                     updateConnectionStatus('Connected');
                     messageInput.disabled = false;
                     sendButton.disabled = false;
                     this.flushMessageQueue();
+                    this.setupHeartbeat();
                 };
 
-                this.ws.onclose = () => {
-                    console.log('WebSocket closed');
-                    this.connected = false;
-                    messageInput.disabled = true;
-                    sendButton.disabled = true;
-                    this.scheduleReconnect();
+                this.ws.onclose = (event) => {
+                    console.log('WebSocket closed:', event.code, event.reason);
+                    this.cleanup();
+                    if (event.code !== 1000) { // Not a normal closure
+                        this.scheduleReconnect();
+                    }
                 };
 
                 this.ws.onerror = (error) => {
                     console.error('WebSocket error:', error);
-                    this.connected = false;
+                    this.cleanup();
                 };
 
                 this.ws.onmessage = (event) => {
+                    this.lastPongTime = Date.now(); // Reset pong timer on any message
+
                     try {
                         const data = JSON.parse(event.data);
                         if (data.error) {
@@ -111,14 +114,54 @@
                 };
             }
 
+            cleanup() {
+                this.connected = false;
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                if (this.pingInterval) {
+                    clearInterval(this.pingInterval);
+                    this.pingInterval = null;
+                }
+                if (this.pongTimeout) {
+                    clearTimeout(this.pongTimeout);
+                    this.pongTimeout = null;
+                }
+            }
+
+            setupHeartbeat() {
+                // Clear any existing intervals
+                if (this.pingInterval) {
+                    clearInterval(this.pingInterval);
+                }
+                if (this.pongTimeout) {
+                    clearTimeout(this.pongTimeout);
+                }
+
+                this.lastPongTime = Date.now();
+
+                // Set up ping interval
+                this.pingInterval = setInterval(() => {
+                    if (this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'ping' }));
+
+                        // Set up pong timeout
+                        this.pongTimeout = setTimeout(() => {
+                            console.log('No pong received, reconnecting...');
+                            this.ws.close();
+                        }, 10000); // Wait 10 seconds for pong
+                    }
+                }, 30000); // Send ping every 30 seconds
+            }
+
             scheduleReconnect() {
                 if (this.reconnectAttempts < this.maxReconnectAttempts) {
                     this.reconnectAttempts++;
-                    updateConnectionStatus(`Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`, true);
+                    const delay = Math.min(5000 + (this.reconnectAttempts * 1000), 10000);
+                    updateConnectionStatus(`Will reconnect in ${Math.round(delay/1000)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`, true);
 
                     setTimeout(() => {
                         this.connect();
-                    }, Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay));
+                    }, delay);
                 }
             }
 
@@ -128,25 +171,29 @@
                     return true;
                 } else {
                     this.messageQueue.push(message);
-                    this.connect();
+                    if (this.ws.readyState > 1) { // CLOSING or CLOSED
+                        this.connect();
+                    }
                     return false;
                 }
             }
 
             flushMessageQueue() {
-                while (this.messageQueue.length > 0) {
+                while (this.messageQueue.length > 0 && this.connected) {
                     const message = this.messageQueue.shift();
                     this.send(message);
                 }
             }
 
             close() {
+                this.cleanup();
                 if (this.ws) {
-                    this.ws.close();
+                    this.ws.close(1000, "Normal closure");
                 }
             }
         }
 
+        // DOM elements
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
@@ -180,6 +227,7 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
+        // Initialize WebSocket client
         const wsClient = new WebSocketClient();
 
         function sendMessage() {

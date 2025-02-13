@@ -1,5 +1,6 @@
 import json
 import logging
+import gevent
 from database import db
 from models import Conversation, Message
 from openai_assistant import OpenAIAssistant
@@ -22,12 +23,25 @@ def handle_websocket(ws):
         db.session.commit()
         logger.info(f"Created new conversation with ID: {conversation.id}")
 
+        # Start ping-pong to keep connection alive
+        def ping():
+            while not ws.closed:
+                try:
+                    ws.send_frame('', ws.OPCODE_PING)
+                    gevent.sleep(15)  # Send ping every 15 seconds
+                except Exception as e:
+                    logger.error(f"Error sending ping: {e}")
+                    break
+
+        gevent.spawn(ping)
+
         while not ws.closed:
             try:
-                message = ws.receive()
+                # Set a longer timeout for receiving messages
+                message = ws.receive(timeout=30)
 
                 if message is None:
-                    logger.debug("Received empty message, continuing...")
+                    logger.debug("Received heartbeat/ping")
                     continue
 
                 try:
@@ -94,6 +108,8 @@ def handle_websocket(ws):
                         }))
 
             except Exception as e:
+                if "timed out" in str(e).lower():
+                    continue  # This is normal for ping/pong
                 logger.error(f"Error in message loop: {str(e)}")
                 if not ws.closed:
                     try:
@@ -102,6 +118,7 @@ def handle_websocket(ws):
                         }))
                     except:
                         pass
+                break
 
     except Exception as e:
         logger.error(f"WebSocket handler error: {str(e)}")
