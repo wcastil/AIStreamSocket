@@ -13,8 +13,26 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS
-CORS(app)
+# Configure CORS with WebSocket support
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "allow_headers": [
+            "Content-Type",
+            "Authorization",
+            "Upgrade",
+            "Connection",
+            "Sec-WebSocket-Key",
+            "Sec-WebSocket-Version",
+            "Sec-WebSocket-Extensions"
+        ],
+        "expose_headers": [
+            "Upgrade",
+            "Connection",
+            "Sec-WebSocket-Accept"
+        ]
+    }
+})
 
 # Initialize database
 init_db(app)
@@ -25,14 +43,18 @@ from websocket_handler import handle_websocket  # noqa: E402
 @app.route('/stream')
 def stream_socket():
     """WebSocket endpoint"""
+    logger.debug("New WebSocket connection request")
     if 'wsgi.websocket' not in request.environ:
+        logger.error("Not a WebSocket request")
         return 'WebSocket connection required', 400
 
     ws = request.environ['wsgi.websocket']
     if not ws:
+        logger.error("Could not create WebSocket connection")
         return 'Could not create WebSocket connection', 400
 
     try:
+        logger.info("WebSocket connection established")
         handle_websocket(ws)
     except Exception as e:
         logger.error("WebSocket error: %s", str(e))
