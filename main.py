@@ -3,6 +3,7 @@ monkey.patch_all()
 
 import os
 import logging
+from flask_sockets import Sockets
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from app import app
@@ -15,15 +16,18 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
 
+    # Get port from environment or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+
     logger.info("Starting WebSocket server...")
 
-    # Create server with proper WebSocket handler
+    # Create WSGI server with WebSocket handler
     server = WSGIServer(
-        ('0.0.0.0', 5000),
+        ('0.0.0.0', port),
         app,
         handler_class=WebSocketHandler,
         log=logger
     )
 
-    logger.info("WebSocket server is running on port 5000")
+    logger.info(f"WebSocket server is running on port {port}")
     server.serve_forever()

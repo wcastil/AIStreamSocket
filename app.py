@@ -14,14 +14,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Initialize Sockets before CORS
+# Initialize Flask-Sockets
 sockets = Sockets(app)
 
 # Configure CORS with WebSocket support
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "allow_headers": ["Content-Type", "Sec-WebSocket-Extensions", "Sec-WebSocket-Key", "Sec-WebSocket-Version"],
+        "allow_headers": [
+            "Content-Type",
+            "Sec-WebSocket-Extensions",
+            "Sec-WebSocket-Key",
+            "Sec-WebSocket-Version",
+            "Sec-WebSocket-Protocol"
+        ],
         "expose_headers": ["Content-Type"],
         "supports_credentials": True
     }
@@ -34,27 +40,29 @@ init_db(app)
 from websocket_handler import handle_websocket  # noqa: E402
 
 # WebSocket route
-@sockets.route('/stream', websocket=True)
-def stream_socket(ws: WebSocket):
+@sockets.route('/stream')
+def stream_socket(ws):
     """Handle WebSocket connections"""
-    if not ws:
-        logger.error("No WebSocket connection available")
+    if not ws or not isinstance(ws, WebSocket):
+        logger.error("Invalid WebSocket connection")
         return
 
     try:
-        logger.info(f"New WebSocket connection started from {ws.origin}")
+        logger.info("New WebSocket connection started")
         handle_websocket(ws)
     except Exception as e:
         logger.error(f"Error in WebSocket connection: {str(e)}")
-        if not ws.closed:
+    finally:
+        if ws and not ws.closed:
             try:
                 ws.close()
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error closing WebSocket: {str(e)}")
 
 # Web interface route
 @app.route('/')
 def index():
+    """Render the chat interface"""
     return render_template('index.html')
 
 # Error handlers
