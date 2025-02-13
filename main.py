@@ -10,7 +10,13 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
 
+    # Get port from environment variable (Replit sets this)
     port = int(os.environ.get('PORT', 5000))
     logger.info(f"Starting server on port {port}...")
 
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Run the app
+    app.run(
+        host='0.0.0.0',  # Required for Replit
+        port=port,
+        debug=True
+    )
