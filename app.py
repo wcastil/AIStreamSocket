@@ -2,16 +2,24 @@ import os
 import logging
 from flask import Flask, render_template
 from flask_sockets import Sockets
-from websocket_handler import handle_websocket
+from database import init_db
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask and Sockets
+# Initialize Flask and extensions
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
+
+# Initialize database
+init_db(app)
+
+# Initialize Sockets
 sockets = Sockets(app)
+
+# Import routes after app is initialized
+from websocket_handler import handle_websocket  # noqa: E402
 
 # WebSocket route
 @sockets.route('/stream')
