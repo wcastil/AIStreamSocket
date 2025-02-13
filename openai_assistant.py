@@ -12,7 +12,7 @@ class OpenAIAssistant:
         if not self.assistant_id:
             raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
 
-    def stream_response(self, user_message, is_voice=False):
+    def stream_response(self, user_message):
         """Stream responses from the OpenAI Assistant API."""
         try:
             # Create a new thread
@@ -50,12 +50,10 @@ class OpenAIAssistant:
                             content = msg.content[0].text.value
                             # Stream the message content word by word
                             words = content.split()
-                            for i, word in enumerate(words):
-                                # Add space after word unless it's the last word
-                                word_with_space = word + (" " if i < len(words) - 1 else "")
+                            for word in words:
                                 yield {
                                     "type": "text",
-                                    "content": word_with_space
+                                    "content": word + " "
                                 }
                             break
                     break

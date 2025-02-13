@@ -65,63 +65,87 @@ def vapi_chat():
 
         # Process through our assistant
         assistant = OpenAIAssistant()
-        full_response = ""
 
-        try:
-            # Get the last user message as the current query
-            last_message = next((msg['content'] for msg in reversed(messages) 
-                               if msg['role'] == 'user'), None)
+        def generate():
+            try:
+                # Get the last user message as the current query
+                last_message = next((msg['content'] for msg in reversed(messages) 
+                                if msg['role'] == 'user'), None)
 
-            if not last_message:
-                return jsonify({
-                    "error": {
-                        "message": "No user message found in conversation",
-                        "type": "invalid_request_error"
-                    }
-                }), 400
-
-            # Collect all response chunks
-            for response in assistant.stream_response(last_message, is_voice=True):
-                if response.get("type") == "error":
-                    return jsonify({
+                if not last_message:
+                    error_response = json.dumps({
                         "error": {
-                            "message": response["content"],
-                            "type": "api_error"
+                            "message": "No user message found in conversation",
+                            "type": "invalid_request_error"
                         }
-                    }), 500
+                    })
+                    yield f"data: {error_response}\n\n"
+                    return
 
-                content = response.get("content", "")
-                full_response += content
+                # Create a new thread and process the message
+                for response in assistant.stream_response(last_message):
+                    if response.get("type") == "error":
+                        error_response = json.dumps({
+                            "error": {
+                                "message": response["content"],
+                                "type": "api_error"
+                            }
+                        })
+                        yield f"data: {error_response}\n\n"
+                        return
 
-            # Format the complete response for VAPI
-            return jsonify({
-                "id": "chatcmpl-" + os.urandom(12).hex(),
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": "custom-assistant",
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": full_response.strip()
-                    },
-                    "finish_reason": "stop"
-                }],
-                "usage": {
-                    "prompt_tokens": -1,
-                    "completion_tokens": -1,
-                    "total_tokens": -1
+                    content = response.get("content", "")
+
+                    # Format each chunk as a delta update
+                    chunk_data = {
+                        "id": f"chatcmpl-{os.urandom(12).hex()}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "custom-assistant",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": content
+                            },
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                # Send the completion message
+                completion_data = {
+                    "id": f"chatcmpl-{os.urandom(12).hex()}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "custom-assistant",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
                 }
-            })
+                yield f"data: {json.dumps(completion_data)}\n\n"
 
-        except Exception as e:
-            logger.error(f"Streaming error: {str(e)}")
-            return jsonify({
-                "error": {
-                    "message": str(e),
-                    "type": "api_error"
-                }
-            }), 500
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                error_response = json.dumps({
+                    "error": {
+                        "message": str(e),
+                        "type": "api_error"
+                    }
+                })
+                yield f"data: {error_response}\n\n"
+
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
+        )
 
     except Exception as e:
         logger.error(f"Error in VAPI endpoint: {str(e)}")
