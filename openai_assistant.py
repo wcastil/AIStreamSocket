@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 class OpenAIAssistant:
     def __init__(self):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        # Store the assistant ID from your custom assistant
         self.assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
 
         if not self.assistant_id:
@@ -19,27 +18,20 @@ class OpenAIAssistant:
             # Create a new thread
             thread = self.client.beta.threads.create()
 
-            # Add the user message to the thread with voice indicator
-            message_params = {
-                "thread_id": thread.id,
-                "role": "user",
-                "content": user_message,
-            }
-
-            # Add metadata for voice processing if needed
-            if is_voice:
-                message_params["metadata"] = {"type": "voice_input"}
-
-            self.client.beta.threads.messages.create(**message_params)
+            # Add the user message to the thread
+            self.client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=user_message
+            )
 
             # Run the assistant
             run = self.client.beta.threads.runs.create(
                 thread_id=thread.id,
-                assistant_id=self.assistant_id,
-                metadata={"output_type": "voice" if is_voice else "text"}
+                assistant_id=self.assistant_id
             )
 
-            # Wait for the completion and stream the response
+            # Poll for response and stream it
             while True:
                 run_status = self.client.beta.threads.runs.retrieve(
                     thread_id=thread.id,
@@ -56,14 +48,15 @@ class OpenAIAssistant:
                     for msg in messages.data:
                         if msg.role == "assistant":
                             content = msg.content[0].text.value
-                            # Stream the message content word by word for voice synthesis preparation
+                            # Stream the message content word by word
                             words = content.split()
-                            for word in words:
-                                response_data = {
-                                    "type": "voice" if is_voice else "text",
-                                    "content": word + " "
+                            for i, word in enumerate(words):
+                                # Add space after word unless it's the last word
+                                word_with_space = word + (" " if i < len(words) - 1 else "")
+                                yield {
+                                    "type": "text",
+                                    "content": word_with_space
                                 }
-                                yield response_data
                             break
                     break
 

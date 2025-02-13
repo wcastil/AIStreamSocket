@@ -54,25 +54,53 @@ def vapi_chat():
         if not last_message:
             return jsonify({"error": "No user message found"}), 400
 
-        # Process through our assistant
-        assistant = OpenAIAssistant()
-        full_response = ""
+        # Process through our assistant and stream the response
+        def generate():
+            assistant = OpenAIAssistant()
+            full_response = ""
 
-        # Collect the full response
-        for response in assistant.stream_response(last_message, is_voice=True):
-            if response.get("type") == "error":
-                return jsonify({"error": response["content"]}), 500
-            full_response += response.get("content", "")
+            try:
+                for response in assistant.stream_response(last_message, is_voice=True):
+                    if response.get("type") == "error":
+                        yield json.dumps({"error": response["content"]}) + "\n"
+                        return
 
-        # Format response for VAPI
-        return jsonify({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": full_response.strip()
-                }
-            }]
-        })
+                    content = response.get("content", "")
+                    full_response += content
+
+                    # Stream each chunk in VAPI format
+                    yield json.dumps({
+                        "choices": [{
+                            "delta": {
+                                "content": content,
+                                "role": "assistant"
+                            },
+                            "finish_reason": None
+                        }]
+                    }) + "\n"
+
+                # Send completion message
+                yield json.dumps({
+                    "choices": [{
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
+                }) + "\n"
+
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                yield json.dumps({"error": str(e)}) + "\n"
+
+        return Response(
+            generate(),
+            mimetype='application/json',
+            headers={
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Transfer-Encoding': 'chunked'
+            }
+        )
 
     except Exception as e:
         logger.error(f"Error in VAPI endpoint: {str(e)}")
