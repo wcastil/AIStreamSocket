@@ -13,18 +13,18 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
 
-    # Get port from environment or default to 5000
     port = int(os.environ.get('PORT', 5000))
-
     logger.info(f"Starting WebSocket server on port {port}...")
 
-    # Create WSGI server with WebSocket handler
-    server = WSGIServer(
-        ('0.0.0.0', port),
-        app,
-        handler_class=WebSocketHandler,
-        log=logger
-    )
-
-    logger.info("Server initialized, starting to serve...")
-    server.serve_forever()
+    try:
+        server = WSGIServer(
+            ('0.0.0.0', port),
+            app,
+            handler_class=WebSocketHandler,
+            log=logger
+        )
+        logger.info("Server initialized, starting to serve...")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Failed to start server: {e}")
+        raise

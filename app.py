@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from geventwebsocket.websocket import WebSocket
 from flask_cors import CORS
 from database import init_db
@@ -13,24 +13,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS with WebSocket support
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "allow_headers": [
-            "Content-Type",
-            "Sec-WebSocket-Extensions",
-            "Sec-WebSocket-Key",
-            "Sec-WebSocket-Version",
-            "Sec-WebSocket-Protocol"
-        ],
-        "expose_headers": [
-            "Content-Type",
-            "Sec-WebSocket-Accept"
-        ],
-        "supports_credentials": True
-    }
-})
+# Configure CORS
+CORS(app)
 
 # Initialize database
 init_db(app)
@@ -38,39 +22,24 @@ init_db(app)
 # Import routes after app is initialized
 from websocket_handler import handle_websocket  # noqa: E402
 
-def websocket_route(ws_handler):
-    """Decorator for WebSocket routes"""
-    def decorator(f):
-        def wrapped(*args, **kwargs):
-            if isinstance(ws_handler, WebSocket):
-                return f(ws_handler, *args, **kwargs)
-            return f(*args, **kwargs)
-        f.websocket_route = True
-        return wrapped
-    return decorator
-
 @app.route('/stream')
-@websocket_route(WebSocket)
-def stream_socket(ws=None):
-    """Handle WebSocket connections"""
-    if not ws or not isinstance(ws, WebSocket):
-        return "WebSocket connection required", 400
+def stream_socket():
+    """WebSocket endpoint"""
+    if 'wsgi.websocket' not in request.environ:
+        return 'WebSocket connection required', 400
+
+    ws = request.environ['wsgi.websocket']
+    if not ws:
+        return 'Could not create WebSocket connection', 400
 
     try:
-        logger.debug("WebSocket connection attempt from %s", ws.origin or 'Unknown')
-        if ws.closed:
-            logger.error("WebSocket is already closed")
-            return
-
         handle_websocket(ws)
     except Exception as e:
-        logger.error("WebSocket handler error: %s", str(e))
+        logger.error("WebSocket error: %s", str(e))
     finally:
-        if ws and not ws.closed:
-            try:
-                ws.close()
-            except Exception as e:
-                logger.error("Error closing WebSocket: %s", str(e))
+        if not ws.closed:
+            ws.close()
+    return ''
 
 # Web interface route
 @app.route('/')
