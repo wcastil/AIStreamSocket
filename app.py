@@ -1,9 +1,10 @@
 import os
 import logging
-from flask import Flask, render_template, request
-from geventwebsocket.websocket import WebSocket
+from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
+from openai_assistant import OpenAIAssistant # Assuming this is defined elsewhere
 from database import init_db
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -13,57 +14,56 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS with WebSocket support
+# Configure CORS for SSE
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "allow_headers": [
-            "Content-Type",
-            "Authorization",
-            "Upgrade",
-            "Connection",
-            "Sec-WebSocket-Key",
-            "Sec-WebSocket-Version",
-            "Sec-WebSocket-Extensions"
-        ],
-        "expose_headers": [
-            "Upgrade",
-            "Connection",
-            "Sec-WebSocket-Accept"
-        ]
+        "supports_credentials": True
     }
 })
 
 # Initialize database
 init_db(app)
 
-# Import routes after app is initialized
-from websocket_handler import handle_websocket  # noqa: E402
-
-@app.route('/stream')
-def stream_socket():
-    """WebSocket endpoint"""
-    logger.debug("New WebSocket connection request")
-    if 'wsgi.websocket' not in request.environ:
-        logger.error("Not a WebSocket request")
-        return 'WebSocket connection required', 400
-
-    ws = request.environ['wsgi.websocket']
-    if not ws:
-        logger.error("Could not create WebSocket connection")
-        return 'Could not create WebSocket connection', 400
-
+def stream_openai_response(message):
+    """Stream OpenAI responses using server-sent events"""
+    assistant = OpenAIAssistant()
     try:
-        logger.info("WebSocket connection established")
-        handle_websocket(ws)
-    except Exception as e:
-        logger.error("WebSocket error: %s", str(e))
-    finally:
-        if not ws.closed:
-            ws.close()
-    return ''
+        for chunk in assistant.stream_response(message):
+            data = json.dumps({
+                "chunk": chunk,
+                "done": False
+            })
+            yield f"data: {data}\n\n"
 
-# Web interface route
+        # Send completion message
+        yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
+    except Exception as e:
+        error_data = json.dumps({"error": str(e)})
+        yield f"data: {error_data}\n\n"
+
+@app.route('/stream', methods=['POST'])
+def stream():
+    """SSE endpoint for streaming responses"""
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+
+    data = request.get_json()
+    message = data.get('message')
+
+    if not message:
+        return jsonify({"error": "Message field is required"}), 400
+
+    return Response(
+        stream_openai_response(message),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
 @app.route('/')
 def index():
     """Render the chat interface"""
@@ -79,3 +79,6 @@ def not_found_error(error):
 def internal_error(error):
     logger.error("500 error: %s", error)
     return "Internal server error", 500
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=5000, debug=True)

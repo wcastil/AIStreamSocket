@@ -14,4 +14,7 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "openai>=1.63.0",
     "flask-cors>=5.0.0",
+    "trafilatura>=2.0.0",
+    "flask-sse>=1.0.0",
+    "redis>=5.2.1",
 ]
