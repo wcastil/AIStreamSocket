@@ -38,6 +38,7 @@
         let currentResponse = '';
         let reconnectAttempts = 0;
         const maxReconnectAttempts = 5;
+        let isReconnecting = false;
 
         function updateConnectionStatus(status, isError = false) {
             connectionStatus.textContent = status;
@@ -45,65 +46,85 @@
         }
 
         function connect() {
+            if (isReconnecting) return;
+
             if (reconnectAttempts >= maxReconnectAttempts) {
                 updateConnectionStatus('Failed to connect after multiple attempts. Please refresh the page.', true);
                 return;
             }
 
+            isReconnecting = true;
             updateConnectionStatus('Connecting...');
             messageInput.disabled = true;
             sendButton.disabled = true;
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/stream`;
-            console.log('Connecting to:', wsUrl);
+            if (ws) {
+                ws.close();
+            }
 
-            ws = new WebSocket(wsUrl);
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/stream`;
+                console.log('Connecting to:', wsUrl);
 
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-                updateConnectionStatus('Connected');
-                messageInput.disabled = false;
-                sendButton.disabled = false;
-                reconnectAttempts = 0;
-            };
+                ws = new WebSocket(wsUrl);
 
-            ws.onclose = (event) => {
-                console.log('WebSocket disconnected:', event.code, event.reason);
-                updateConnectionStatus('Disconnected - Reconnecting...', true);
-                messageInput.disabled = true;
-                sendButton.disabled = true;
-                reconnectAttempts++;
-                setTimeout(connect, 2000);
-            };
+                ws.onopen = () => {
+                    console.log('WebSocket connected successfully');
+                    updateConnectionStatus('Connected');
+                    messageInput.disabled = false;
+                    sendButton.disabled = false;
+                    reconnectAttempts = 0;
+                    isReconnecting = false;
+                };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                updateConnectionStatus('Connection error', true);
-            };
+                ws.onclose = (event) => {
+                    console.log('WebSocket disconnected:', event.code, event.reason);
+                    messageInput.disabled = true;
+                    sendButton.disabled = true;
+                    isReconnecting = false;
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-
-                    if (data.error) {
-                        appendMessage('Error: ' + data.error, 'text-danger');
-                        return;
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        updateConnectionStatus('Disconnected - Reconnecting...', true);
+                        setTimeout(connect, 2000);
+                        reconnectAttempts++;
                     }
+                };
 
-                    if (data.chunk) {
-                        currentResponse += data.chunk;
-                        updateLastMessage(currentResponse);
-                    }
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateConnectionStatus('Connection error', true);
+                    isReconnecting = false;
+                };
 
-                    if (data.done) {
-                        currentResponse = '';
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('Received message:', data);
+
+                        if (data.error) {
+                            appendMessage('Error: ' + data.error, 'text-danger');
+                            return;
+                        }
+
+                        if (data.chunk) {
+                            currentResponse += data.chunk;
+                            updateLastMessage(currentResponse);
+                        }
+
+                        if (data.done) {
+                            currentResponse = '';
+                        }
+                    } catch (error) {
+                        console.error('Error processing message:', error);
+                        appendMessage('Error processing response', 'text-danger');
                     }
-                } catch (error) {
-                    console.error('Error processing message:', error);
-                    appendMessage('Error processing response', 'text-danger');
-                }
-            };
+                };
+            } catch (error) {
+                console.error('Error creating WebSocket:', error);
+                updateConnectionStatus('Error creating connection', true);
+                isReconnecting = false;
+            }
         }
 
         function appendMessage(text, className = '') {

@@ -4,6 +4,7 @@ from flask import Flask, render_template
 from flask_sockets import Sockets
 from database import init_db
 from geventwebsocket.websocket import WebSocket
+from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Initialize Flask and extensions
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Initialize database
 init_db(app)
@@ -30,6 +32,7 @@ def stream_socket(ws: WebSocket):
         logger.error("No WebSocket connection available")
         return
 
+    logger.info("New WebSocket connection started")
     handle_websocket(ws)
 
 # Web interface route
