@@ -2,9 +2,9 @@ import os
 import logging
 from flask import Flask, render_template
 from flask_sockets import Sockets
-from database import init_db
 from geventwebsocket.websocket import WebSocket
 from flask_cors import CORS
+from database import init_db
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -28,7 +28,10 @@ CORS(app, resources={
             "Sec-WebSocket-Version",
             "Sec-WebSocket-Protocol"
         ],
-        "expose_headers": ["Content-Type"],
+        "expose_headers": [
+            "Content-Type",
+            "Sec-WebSocket-Accept"
+        ],
         "supports_credentials": True
     }
 })
@@ -43,21 +46,25 @@ from websocket_handler import handle_websocket  # noqa: E402
 @sockets.route('/stream')
 def stream_socket(ws):
     """Handle WebSocket connections"""
-    if not ws or not isinstance(ws, WebSocket):
-        logger.error("Invalid WebSocket connection")
-        return
-
     try:
-        logger.info("New WebSocket connection started")
+        if not ws or not isinstance(ws, WebSocket):
+            logger.error("Invalid WebSocket connection")
+            return
+
+        logger.debug("WebSocket connection attempt from %s", ws.origin or 'Unknown')
+        if ws.closed:
+            logger.error("WebSocket is already closed")
+            return
+
         handle_websocket(ws)
     except Exception as e:
-        logger.error(f"Error in WebSocket connection: {str(e)}")
+        logger.error("WebSocket handler error: %s", str(e))
     finally:
         if ws and not ws.closed:
             try:
                 ws.close()
             except Exception as e:
-                logger.error(f"Error closing WebSocket: {str(e)}")
+                logger.error("Error closing WebSocket: %s", str(e))
 
 # Web interface route
 @app.route('/')
@@ -68,10 +75,10 @@ def index():
 # Error handlers
 @app.errorhandler(404)
 def not_found_error(error):
-    logger.error(f"404 error: {error}")
+    logger.error("404 error: %s", error)
     return "Page not found", 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    logger.error(f"500 error: {error}")
+    logger.error("500 error: %s", error)
     return "Internal server error", 500

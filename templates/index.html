@@ -46,11 +46,18 @@
             connectionStatus.className = `text-center small ${isError ? 'text-danger' : 'text-success'}`;
         }
 
-        function clearReconnectTimeout() {
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
+        function resetConnection() {
+            if (ws) {
+                try {
+                    ws.onclose = null; // Prevent the close handler from triggering
+                    ws.close();
+                } catch (e) {
+                    console.error('Error closing WebSocket:', e);
+                }
+                ws = null;
             }
+            messageInput.disabled = true;
+            sendButton.disabled = true;
         }
 
         function connect() {
@@ -60,24 +67,15 @@
             }
 
             if (reconnectAttempts >= maxReconnectAttempts) {
-                updateConnectionStatus('Failed to connect after multiple attempts. Please refresh the page.', true);
+                updateConnectionStatus('Maximum reconnection attempts reached. Please refresh the page.', true);
                 return;
             }
 
-            clearReconnectTimeout();
+            resetConnection();
             isReconnecting = true;
             updateConnectionStatus('Connecting...');
-            messageInput.disabled = true;
-            sendButton.disabled = true;
 
             try {
-                // Close existing connection if any
-                if (ws) {
-                    console.log('Closing existing connection');
-                    ws.close();
-                    ws = null;
-                }
-
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/stream`;
                 console.log('Connecting to:', wsUrl);
@@ -91,24 +89,29 @@
                     sendButton.disabled = false;
                     reconnectAttempts = 0;
                     isReconnecting = false;
-                    clearReconnectTimeout();
+                    if (reconnectTimeout) {
+                        clearTimeout(reconnectTimeout);
+                        reconnectTimeout = null;
+                    }
                 };
 
                 ws.onclose = (event) => {
                     console.log('WebSocket disconnected:', event.code, event.reason);
-                    messageInput.disabled = true;
-                    sendButton.disabled = true;
-                    ws = null;
+                    resetConnection();
 
                     if (!isReconnecting && reconnectAttempts < maxReconnectAttempts) {
-                        updateConnectionStatus('Disconnected - Attempting to reconnect...', true);
+                        updateConnectionStatus('Connection lost - Attempting to reconnect...', true);
                         reconnectAttempts++;
-                        clearReconnectTimeout();
+
+                        if (reconnectTimeout) {
+                            clearTimeout(reconnectTimeout);
+                        }
+
                         reconnectTimeout = setTimeout(() => {
                             console.log('Attempting reconnection...');
                             isReconnecting = false;
                             connect();
-                        }, 3000); // Increased delay between attempts
+                        }, Math.min(1000 * Math.pow(2, reconnectAttempts), 10000)); // Exponential backoff with max 10s
                     }
                 };
 
@@ -127,13 +130,15 @@
                             return;
                         }
 
-                        if (data.chunk) {
-                            currentResponse += data.chunk;
-                            updateLastMessage(currentResponse);
-                        }
+                        if (data.chunk !== undefined) {
+                            if (data.chunk) {
+                                currentResponse += data.chunk;
+                                updateLastMessage(currentResponse);
+                            }
 
-                        if (data.done) {
-                            currentResponse = '';
+                            if (data.done) {
+                                currentResponse = '';
+                            }
                         }
                     } catch (error) {
                         console.error('Error processing message:', error);
@@ -144,7 +149,10 @@
                 console.error('Error creating WebSocket:', error);
                 updateConnectionStatus('Error creating connection', true);
                 isReconnecting = false;
-                clearReconnectTimeout();
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
             }
         }
 
@@ -187,10 +195,7 @@
 
         // Clean up on page unload
         window.addEventListener('beforeunload', () => {
-            if (ws) {
-                ws.close();
-            }
-            clearReconnectTimeout();
+            resetConnection();
         });
 
         // Start initial connection

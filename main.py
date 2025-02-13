@@ -1,6 +1,4 @@
-from gevent import monkey
-monkey.patch_all()
-
+import monkey  # noqa: F401
 import os
 import logging
 from flask_sockets import Sockets
@@ -19,7 +17,7 @@ if __name__ == "__main__":
     # Get port from environment or default to 5000
     port = int(os.environ.get('PORT', 5000))
 
-    logger.info("Starting WebSocket server...")
+    logger.info(f"Starting WebSocket server on port {port}...")
 
     # Create WSGI server with WebSocket handler
     server = WSGIServer(
@@ -29,5 +27,5 @@ if __name__ == "__main__":
         log=logger
     )
 
-    logger.info(f"WebSocket server is running on port {port}")
+    logger.info("Server initialized, starting to serve...")
     server.serve_forever()
