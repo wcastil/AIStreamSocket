@@ -17,11 +17,11 @@ app.secret_key = os.environ.get("SESSION_SECRET")
 # Initialize Sockets before CORS
 sockets = Sockets(app)
 
-# Configure CORS after Sockets initialization
+# Configure CORS with WebSocket support
 CORS(app, resources={
     r"/*": {
         "origins": "*",
-        "allow_headers": ["Content-Type"],
+        "allow_headers": ["Content-Type", "Sec-WebSocket-Extensions", "Sec-WebSocket-Key", "Sec-WebSocket-Version"],
         "expose_headers": ["Content-Type"],
         "supports_credentials": True
     }
@@ -34,7 +34,7 @@ init_db(app)
 from websocket_handler import handle_websocket  # noqa: E402
 
 # WebSocket route
-@sockets.route('/stream')
+@sockets.route('/stream', websocket=True)
 def stream_socket(ws: WebSocket):
     """Handle WebSocket connections"""
     if not ws:

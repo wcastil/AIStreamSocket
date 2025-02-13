@@ -54,7 +54,10 @@
         }
 
         function connect() {
-            if (isReconnecting) return;
+            if (isReconnecting) {
+                console.log('Already attempting to reconnect');
+                return;
+            }
 
             if (reconnectAttempts >= maxReconnectAttempts) {
                 updateConnectionStatus('Failed to connect after multiple attempts. Please refresh the page.', true);
@@ -67,13 +70,14 @@
             messageInput.disabled = true;
             sendButton.disabled = true;
 
-            // Close existing connection if any
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
-
             try {
+                // Close existing connection if any
+                if (ws) {
+                    console.log('Closing existing connection');
+                    ws.close();
+                    ws = null;
+                }
+
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/stream`;
                 console.log('Connecting to:', wsUrl);
@@ -97,13 +101,14 @@
                     ws = null;
 
                     if (!isReconnecting && reconnectAttempts < maxReconnectAttempts) {
-                        updateConnectionStatus('Disconnected - Reconnecting...', true);
+                        updateConnectionStatus('Disconnected - Attempting to reconnect...', true);
                         reconnectAttempts++;
                         clearReconnectTimeout();
                         reconnectTimeout = setTimeout(() => {
+                            console.log('Attempting reconnection...');
                             isReconnecting = false;
                             connect();
-                        }, 2000);
+                        }, 3000); // Increased delay between attempts
                     }
                 };
 
