@@ -17,10 +17,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "WebSocket Server"
+args = "Flask Server"
 
 [[workflows.workflow]]
-name = "WebSocket Server"
+name = "Flask Server"
 author = "agent"
 
 [workflows.workflow.metadata]
