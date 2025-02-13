@@ -14,14 +14,21 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-# Configure CORS to allow WebSocket connections
-CORS(app)
+# Initialize Sockets before CORS
+sockets = Sockets(app)
+
+# Configure CORS after Sockets initialization
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "allow_headers": ["Content-Type"],
+        "expose_headers": ["Content-Type"],
+        "supports_credentials": True
+    }
+})
 
 # Initialize database
 init_db(app)
-
-# Initialize Sockets
-sockets = Sockets(app)
 
 # Import routes after app is initialized
 from websocket_handler import handle_websocket  # noqa: E402
@@ -35,12 +42,15 @@ def stream_socket(ws: WebSocket):
         return
 
     try:
-        logger.info("New WebSocket connection started")
+        logger.info(f"New WebSocket connection started from {ws.origin}")
         handle_websocket(ws)
     except Exception as e:
         logger.error(f"Error in WebSocket connection: {str(e)}")
         if not ws.closed:
-            ws.close()
+            try:
+                ws.close()
+            except:
+                pass
 
 # Web interface route
 @app.route('/')

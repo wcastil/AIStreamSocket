@@ -1,10 +1,11 @@
 from gevent import monkey
 monkey.patch_all()
 
-from app import app
-from gevent import pywsgi
-from geventwebsocket.handler import WebSocketHandler
+import os
 import logging
+from gevent.pywsgi import WSGIServer
+from geventwebsocket.handler import WebSocketHandler
+from app import app
 
 if __name__ == "__main__":
     # Configure detailed logging
@@ -17,7 +18,7 @@ if __name__ == "__main__":
     logger.info("Starting WebSocket server...")
 
     # Create server with proper WebSocket handler
-    server = pywsgi.WSGIServer(
+    server = WSGIServer(
         ('0.0.0.0', 5000),
         app,
         handler_class=WebSocketHandler,
