@@ -46,24 +46,49 @@ def vapi_chat():
     try:
         data = request.get_json()
         if not data or 'messages' not in data:
-            return jsonify({"error": "Invalid request format"}), 400
+            return jsonify({
+                "error": {
+                    "message": "Invalid request format - 'messages' field is required",
+                    "type": "invalid_request_error"
+                }
+            }), 400
 
-        # Get the last user message
-        last_message = next((msg['content'] for msg in reversed(data['messages']) 
-                           if msg['role'] == 'user'), None)
-
-        if not last_message:
-            return jsonify({"error": "No user message found"}), 400
+        # Collect all messages to maintain conversation context
+        messages = data['messages']
+        if not messages or not isinstance(messages, list):
+            return jsonify({
+                "error": {
+                    "message": "Messages must be a non-empty array",
+                    "type": "invalid_request_error"
+                }
+            }), 400
 
         # Process through our assistant
         assistant = OpenAIAssistant()
         full_response = ""
 
         try:
+            # Get the last user message as the current query
+            last_message = next((msg['content'] for msg in reversed(messages) 
+                               if msg['role'] == 'user'), None)
+
+            if not last_message:
+                return jsonify({
+                    "error": {
+                        "message": "No user message found in conversation",
+                        "type": "invalid_request_error"
+                    }
+                }), 400
+
             # Collect all response chunks
             for response in assistant.stream_response(last_message, is_voice=True):
                 if response.get("type") == "error":
-                    return jsonify({"error": response["content"]}), 500
+                    return jsonify({
+                        "error": {
+                            "message": response["content"],
+                            "type": "api_error"
+                        }
+                    }), 500
 
                 content = response.get("content", "")
                 full_response += content
@@ -91,11 +116,21 @@ def vapi_chat():
 
         except Exception as e:
             logger.error(f"Streaming error: {str(e)}")
-            return jsonify({"error": str(e)}), 500
+            return jsonify({
+                "error": {
+                    "message": str(e),
+                    "type": "api_error"
+                }
+            }), 500
 
     except Exception as e:
         logger.error(f"Error in VAPI endpoint: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": {
+                "message": str(e),
+                "type": "api_error"
+            }
+        }), 500
 
 @app.route('/stream', methods=['POST'])
 def stream():
