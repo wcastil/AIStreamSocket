@@ -6,22 +6,46 @@ from flask_cors import CORS
 from openai_assistant import OpenAIAssistant
 import json
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET")
+app.secret_key = os.environ.get("SESSION_SECRET", "default-secret-key")
 
 # Configure CORS for all routes
 CORS(app)
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     """Render the chat interface"""
     logger.info("Serving index page")
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error serving index page: {e}")
+        return "Error loading chat interface", 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    logger.info("Health check request received")
+    try:
+        return jsonify({
+            "status": "healthy",
+            "timestamp": time.time(),
+            "env": {
+                "port": os.environ.get('PORT'),
+                "host": request.host
+            }
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 def stream_openai_response(message, is_voice=False):
     """Stream OpenAI responses using server-sent events"""

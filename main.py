@@ -12,11 +12,13 @@ if __name__ == "__main__":
 
     # Get port from environment variable (Replit sets this)
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Starting server on port {port}...")
+    logger.info(f"Starting server on port {port} with host 0.0.0.0")
 
-    # Run the app
+    # Run the app with Replit-specific configuration
     app.run(
-        host='0.0.0.0',  # Required for Replit
+        host='0.0.0.0',
         port=port,
-        debug=True
+        debug=True,
+        use_reloader=True,
+        threaded=True  # Enable threading for better performance
     )
