@@ -1,0 +1,59 @@
+I need to update my existing Flask server that interacts with OpenAI’s Assistants API. 
+
+### **Changes Needed:**
+1️⃣ The server should **handle function calls from OpenAI** to extract structured interview data.
+2️⃣ It should **store extracted data in a structured format** (a predefined JSON data model).
+3️⃣ The server must **track missing fields** and **generate follow-up questions** based on what’s incomplete.
+4️⃣ Responses should be **streamed back to VAPI** in real time.
+5️⃣ If the assistant calls a function, the **Flask server should update the data model** dynamically.
+6️⃣ The interview should remain **adaptive**, asking only necessary follow-ups.
+
+### **Required Features:**
+- Accept `POST` requests at `/v1/chat/completions`.
+- **Create a thread** in OpenAI Assistants API for tracking progress.
+- **Process OpenAI function calls** to extract data.
+- **Store extracted interview responses in a JSON object**.
+- **Identify missing information** and **generate targeted follow-ups**.
+- **Stream the assistant’s response back to the client**.
+
+### **Data Model for Storing Responses:**
+```json
+{
+  "core_values_and_priorities": {
+    "personal_values": [],
+    "professional_values": [],
+    "prioritization_rules": []
+  },
+  "personality_and_emotional_profile": {
+    "emotional_regulation": "",
+    "leadership_style": "",
+    "decision_making_tendencies": ""
+  },
+  "decision_making_framework": {
+    "analytical_intuitive_balance": null,
+    "risk_tolerance": "",
+    "timeframe_focus": ""
+  },
+  "behavioral_patterns": {
+    "stress_response": "",
+    "conflict_resolution": "",
+    "work_life_balance": ""
+  },
+  "relationships_and_interactions": {
+    "collaboration_style": "",
+    "trust_building": "",
+    "conflict_handling": ""
+  },
+  "growth_and_learning": {
+    "preferred_learning": "",
+    "reflection_tendencies": "",
+    "openness_to_change": null
+  },
+  "creativity_and_divergence": {
+    "divergent_thinking": "",
+    "contrarian_tendencies": "",
+    "paradox_handling": "",
+    "deviation_conditions": ""
+  },
+  "missing_fields": []
+}
