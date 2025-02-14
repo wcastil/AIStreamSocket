@@ -143,19 +143,26 @@ class OpenAIAssistant:
                     # Get the latest assistant message
                     for msg in messages.data:
                         if msg.role == "assistant":
-                            # Handle the message content properly
-                            if hasattr(msg.content[0], 'text'):
-                                content = msg.content[0].text.value
-                            else:
-                                content = str(msg.content[0])  # Fallback to string representation
+                            try:
+                                # Handle the message content properly
+                                if isinstance(msg.content, list) and len(msg.content) > 0:
+                                    if hasattr(msg.content[0], 'text'):
+                                        content = msg.content[0].text.value
+                                    else:
+                                        content = str(msg.content[0])
+                                else:
+                                    # Handle case where content might be a string directly
+                                    content = str(msg.content)
 
-                            logger.info(f"Assistant response: {content[:50]}...")
-                            # Stream the message content word by word
-                            words = content.split()
-                            for word in words:
-                                yield word + " "
+                                logger.info(f"Assistant response: {content[:50]}...")
+                                # Stream the message content word by word
+                                words = content.split()
+                                for word in words:
+                                    yield word + " "
+                            except Exception as e:
+                                logger.error(f"Error processing message content: {str(e)}")
+                                yield f"Error processing response: {str(e)}"
                             break
-                    break
 
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
                     error_message = f"Assistant run failed with status: {run_status.status}"
