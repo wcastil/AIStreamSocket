@@ -3,7 +3,6 @@ monkey.patch_all()
 
 import os
 import logging
-from gevent.pywsgi import WSGIServer
 from app import app
 
 if __name__ == "__main__":
@@ -17,13 +16,16 @@ if __name__ == "__main__":
 
     try:
         # Get port from environment variable (Replit sets this)
-        port = int(os.environ.get('PORT', 8080))
-        logger.info(f"Starting server on port {port} with host 0.0.0.0")
+        port = int(os.environ.get('PORT', 5000))
+        logger.info(f"Starting Flask development server on port {port}")
 
-        # Create and run the WSGI server
-        http_server = WSGIServer(('0.0.0.0', port), app)
-        logger.info("Server initialized, starting to serve requests...")
-        http_server.serve_forever()
+        # Run the Flask development server
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=True,
+            use_reloader=False  # Disable reloader to prevent conflicts
+        )
 
     except Exception as e:
         logger.error(f"Failed to start server: {str(e)}", exc_info=True)
