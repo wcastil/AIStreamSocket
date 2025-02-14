@@ -96,7 +96,7 @@ class OpenAIAssistant:
                 extraction_result = self._extract_interview_data(user_message, interview_data)
                 logger.info("Extraction result received")
 
-                if extraction_result and extraction_result.tool_calls:
+                if extraction_result and hasattr(extraction_result, 'tool_calls'):
                     logger.info(f"Found {len(extraction_result.tool_calls)} tool calls")
                     # Process the extracted data
                     for tool_call in extraction_result.tool_calls:
@@ -143,7 +143,12 @@ class OpenAIAssistant:
                     # Get the latest assistant message
                     for msg in messages.data:
                         if msg.role == "assistant":
-                            content = msg.content[0].text.value
+                            # Handle the message content properly
+                            if hasattr(msg.content[0], 'text'):
+                                content = msg.content[0].text.value
+                            else:
+                                content = str(msg.content[0])  # Fallback to string representation
+
                             logger.info(f"Assistant response: {content[:50]}...")
                             # Stream the message content word by word
                             words = content.split()
