@@ -2,8 +2,8 @@ import os
 import logging
 import json
 from openai import OpenAI
-from models import InterviewData, Message # Added import
-from database import db # Added import
+from models import InterviewData, Message
+from database import db
 
 logger = logging.getLogger(__name__)
 
@@ -81,30 +81,45 @@ class OpenAIAssistant:
             thread = self.client.beta.threads.create() if not thread_id else None
             thread_id = thread.id if thread else thread_id
 
+            logger.info(f"Processing message in thread {thread_id}")
+
             # Add the user message to the thread
             self.client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
                 content=user_message
             )
+            logger.info(f"Added user message: {user_message[:50]}...")
 
             # First, extract structured data from the user's message
             if interview_data:
                 extraction_result = self._extract_interview_data(user_message, interview_data)
+                logger.info("Extraction result received")
+
                 if extraction_result and extraction_result.tool_calls:
+                    logger.info(f"Found {len(extraction_result.tool_calls)} tool calls")
                     # Process the extracted data
                     for tool_call in extraction_result.tool_calls:
                         if tool_call.function.name == "update_interview_data":
                             extracted_data = json.loads(tool_call.function.arguments)
+                            logger.info(f"Function call detected: update_interview_data")
+                            logger.info(f"Arguments: {json.dumps(extracted_data, indent=2)}")
+
                             # Update the interview data model
                             for field_name, value in extracted_data.items():
                                 if hasattr(interview_data, field_name):
                                     setattr(interview_data, field_name, value)
+                                    logger.info(f"Updated field {field_name} with value: {value}")
+
                             if "missing_fields" in extracted_data:
                                 interview_data.missing_fields = extracted_data["missing_fields"]
+                                logger.info(f"Missing fields updated: {extracted_data['missing_fields']}")
+
                             db.session.commit()
+                            logger.info("Database updated successfully")
 
             # Run the assistant
+            logger.info("Starting assistant run")
             run = self.client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=self.assistant_id
@@ -117,6 +132,8 @@ class OpenAIAssistant:
                     run_id=run.id
                 )
 
+                logger.info(f"Run status: {run_status.status}")
+
                 if run_status.status == 'completed':
                     # Get the messages
                     messages = self.client.beta.threads.messages.list(
@@ -127,6 +144,7 @@ class OpenAIAssistant:
                     for msg in messages.data:
                         if msg.role == "assistant":
                             content = msg.content[0].text.value
+                            logger.info(f"Assistant response: {content[:50]}...")
                             # Stream the message content word by word
                             words = content.split()
                             for word in words:
