@@ -89,7 +89,6 @@ class OpenAIAssistant:
                 role="user",
                 content=user_message
             )
-            logger.info(f"Added user message: {user_message[:50]}...")
 
             # First, extract structured data from the user's message
             if interview_data:
@@ -144,33 +143,29 @@ class OpenAIAssistant:
                     for msg in messages.data:
                         if msg.role == "assistant":
                             try:
-                                # Handle the message content properly
-                                if isinstance(msg.content, list) and len(msg.content) > 0:
-                                    if hasattr(msg.content[0], 'text'):
-                                        content = msg.content[0].text.value
-                                    else:
-                                        content = str(msg.content[0])
+                                # Process message content
+                                if isinstance(msg.content, list) and msg.content:
+                                    content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
                                 else:
-                                    # Handle case where content might be a string directly
                                     content = str(msg.content)
 
                                 logger.info(f"Assistant response: {content[:50]}...")
-                                # Stream the message content word by word
-                                words = content.split()
-                                for word in words:
-                                    yield word + " "
+                                # Return content directly as string
+                                yield content
                             except Exception as e:
-                                logger.error(f"Error processing message content: {str(e)}")
-                                yield f"Error processing response: {str(e)}"
+                                error_msg = f"Error processing message: {str(e)}"
+                                logger.error(error_msg)
+                                yield error_msg
                             break
+                    break
 
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    error_message = f"Assistant run failed with status: {run_status.status}"
-                    logger.error(error_message)
-                    yield error_message
+                    error_msg = f"Assistant run failed with status: {run_status.status}"
+                    logger.error(error_msg)
+                    yield error_msg
                     break
 
         except Exception as e:
-            error_message = f"Error in OpenAI Assistant: {str(e)}"
-            logger.error(error_message)
-            yield error_message
+            error_msg = f"Error in OpenAI Assistant: {str(e)}"
+            logger.error(error_msg)
+            yield error_msg

@@ -63,16 +63,27 @@ def stream_openai_response(message, is_voice=False):
     assistant = OpenAIAssistant()
     try:
         for response in assistant.stream_response(message):
-            data = json.dumps({
-                "type": response.get("type", "text"),
-                "chunk": response.get("content", ""),
-                "done": False
-            })
-            yield f"data: {data}\n\n"
+            # Ensure response is treated as plain text
+            if isinstance(response, str):
+                data = {
+                    "type": "text",
+                    "chunk": response,
+                    "done": False
+                }
+            else:
+                # Handle potential dictionary responses
+                data = {
+                    "type": response.get("type", "text"),
+                    "chunk": response.get("content", ""),
+                    "done": False
+                }
+
+            yield f"data: {json.dumps(data)}\n\n"
 
         # Send completion message
         yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
     except Exception as e:
+        logger.error(f"Error in stream_openai_response: {str(e)}")
         error_data = json.dumps({"error": str(e)})
         yield f"data: {error_data}\n\n"
 
