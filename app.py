@@ -14,12 +14,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "default-secret-key")
+try:
+    # Initialize Flask
+    app = Flask(__name__)
+    app.secret_key = os.environ.get("SESSION_SECRET", "default-secret-key")
 
-# Configure CORS for all routes
-CORS(app)
+    # Configure CORS for all routes
+    CORS(app)
+
+    # Import database configuration
+    import database
+    database.init_db(app)
+
+    logger.info("Flask application initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing Flask application: {str(e)}", exc_info=True)
+    raise
 
 @app.route('/', methods=['GET'])
 def index():
@@ -204,5 +214,5 @@ def internal_error(error):
     return "Internal server error", 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Let main.py handle the server start
+    pass
