@@ -29,7 +29,9 @@ try:
     CORS(app, resources={
         r"/*": {
             "origins": ["*"],
-            "supports_credentials": True
+            "supports_credentials": True,
+            "allow_headers": ["*"],
+            "expose_headers": ["*"]
         }
     })
 
@@ -65,8 +67,10 @@ except Exception as e:
 def after_request(response):
     """Modify response headers for better webview compatibility"""
     # Allow webview to properly render content
-    response.headers['X-Frame-Options'] = 'ALLOW-FROM https://*.replit.dev'
+    response.headers['X-Frame-Options'] = 'ALLOW-FROM https://*.replit.dev https://*.replit.com'
     response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://*.replit.dev https://*.replit.com"
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = '*'
     logger.info(f"Setting security headers for request from {request.headers.get('Host', 'unknown')}")
     return response
 
