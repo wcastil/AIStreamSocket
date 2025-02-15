@@ -8,6 +8,8 @@ from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 from openai_assistant import OpenAIAssistant
 import json
+import database # Assuming this import is already present
+
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -26,7 +28,7 @@ try:
     CORS(app)
 
     # Import database configuration
-    import database
+    
     database.init_db(app)
 
     logger.info("Flask application initialized successfully")
@@ -75,8 +77,14 @@ def vapi_chat():
                     yield f"data: {error_response}\n\n"
                     return
 
-                # Process through the assistant
-                for response in assistant.stream_response(last_message):
+                # Create or get conversation for this session
+                conversation = Conversation() # Assuming Conversation class is defined elsewhere
+                db.session.add(conversation) # Assuming db is defined and initialized elsewhere
+                db.session.commit()
+                logger.debug(f"🔹 Created new conversation: {conversation.id}")
+
+                # Process through the assistant with conversation tracking
+                for response in assistant.stream_response(last_message, conversation_id=conversation.id):
                     # Handle string responses
                     content = response if isinstance(response, str) else response.get("content", "")
 
@@ -95,6 +103,13 @@ def vapi_chat():
                         }]
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                # Trigger asynchronous evaluation after response
+                try:
+                    evaluation = assistant.evaluate_interview_progress(conversation.id)
+                    logger.info(f"🔹 Interview evaluation complete:\n{evaluation[:200]}...")
+                except Exception as e:
+                    logger.error(f"Error in async evaluation: {str(e)}", exc_info=True)
 
                 # Send the completion message
                 completion_data = {
