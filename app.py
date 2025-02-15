@@ -228,6 +228,33 @@ def stream_openai_response(message, session_id=None):
         error_data = json.dumps({"error": str(e)})
         yield f"data: {error_data}\n\n"
 
+@app.route('/conversations', methods=['GET'])
+def view_conversations():
+    """View all conversations and their messages"""
+    try:
+        conversations = Conversation.query.all()
+        conversations_data = []
+        
+        for conv in conversations:
+            messages = Message.query.filter_by(conversation_id=conv.id).order_by(Message.created_at).all()
+            messages_data = [{
+                'role': msg.role,
+                'content': msg.content,
+                'created_at': msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            } for msg in messages]
+            
+            conversations_data.append({
+                'id': conv.id,
+                'session_id': conv.session_id,
+                'created_at': conv.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'messages': messages_data
+            })
+            
+        return render_template('conversations.html', conversations=conversations_data)
+    except Exception as e:
+        logger.error(f"Error viewing conversations: {str(e)}")
+        return str(e), 500
+
 @app.errorhandler(404)
 def not_found_error(error):
     logger.error("404 error: %s", error)
