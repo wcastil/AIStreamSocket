@@ -61,6 +61,14 @@ except Exception as e:
     logger.error(f"Error initializing Flask application: {str(e)}", exc_info=True)
     raise
 
+@app.after_request
+def after_request(response):
+    """Modify response headers for better webview compatibility"""
+    # Allow webview to properly render content
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://*.replit.com"
+    return response
+
 @app.route('/', methods=['GET'])
 def index():
     """Render the chat interface"""
