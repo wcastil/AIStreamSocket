@@ -92,8 +92,16 @@ def vapi_chat():
                 }
             }), 400
 
-        # Extract session ID from request headers or use a default
+        # Extract session ID from request headers
         session_id = request.headers.get('X-Session-ID')
+        if not session_id:
+            logger.warning("No session ID provided in VAPI request")
+            return jsonify({
+                "error": {
+                    "message": "Session ID is required",
+                    "type": "invalid_request_error"
+                }
+            }), 400
 
         def generate():
             # Create a new application context for the generator
