@@ -4,16 +4,21 @@ import json
 from openai import OpenAI
 from models import InterviewData, Message
 from database import db
+import time
 
 logger = logging.getLogger(__name__)
 
 class OpenAIAssistant:
     def __init__(self):
-        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        self.assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
+        try:
+            self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            self.assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
 
-        if not self.assistant_id:
-            raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
+            if not self.assistant_id:
+                raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}", exc_info=True)
+            raise
 
     def _extract_interview_data(self, user_input, current_data):
         """Extract structured interview data from user input"""
@@ -78,17 +83,26 @@ class OpenAIAssistant:
         """Stream responses from the OpenAI Assistant API with data extraction"""
         try:
             # Create a new thread if none provided
-            thread = self.client.beta.threads.create() if not thread_id else None
-            thread_id = thread.id if thread else thread_id
-
-            logger.info(f"Processing message in thread {thread_id}")
+            try:
+                thread = self.client.beta.threads.create() if not thread_id else None
+                thread_id = thread.id if thread else thread_id
+                logger.info(f"Processing message in thread {thread_id}")
+            except Exception as e:
+                logger.error(f"Error creating thread: {str(e)}", exc_info=True)
+                yield f"Error creating conversation thread: {str(e)}"
+                return
 
             # Add the user message to the thread
-            self.client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
+            try:
+                self.client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=user_message
+                )
+            except Exception as e:
+                logger.error(f"Error adding message to thread: {str(e)}", exc_info=True)
+                yield f"Error adding message to conversation: {str(e)}"
+                return
 
             # First, extract structured data from the user's message
             if interview_data:
@@ -118,54 +132,69 @@ class OpenAIAssistant:
                             logger.info("Database updated successfully")
 
             # Run the assistant
-            logger.info("Starting assistant run")
-            run = self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            try:
+                logger.info("Starting assistant run")
+                run = self.client.beta.threads.runs.create(
+                    thread_id=thread_id,
+                    assistant_id=self.assistant_id
+                )
+            except Exception as e:
+                logger.error(f"Error starting assistant run: {str(e)}", exc_info=True)
+                yield f"Error starting conversation: {str(e)}"
+                return
 
             # Poll for response and stream it
+            max_retries = 3
+            retry_count = 0
+
             while True:
-                run_status = self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-
-                logger.info(f"Run status: {run_status.status}")
-
-                if run_status.status == 'completed':
-                    # Get the messages
-                    messages = self.client.beta.threads.messages.list(
-                        thread_id=thread_id
+                try:
+                    run_status = self.client.beta.threads.runs.retrieve(
+                        thread_id=thread_id,
+                        run_id=run.id
                     )
 
-                    # Get the latest assistant message
-                    for msg in messages.data:
-                        if msg.role == "assistant":
-                            try:
-                                # Process message content
-                                if isinstance(msg.content, list) and msg.content:
+                    logger.info(f"Run status: {run_status.status}")
+
+                    if run_status.status == 'completed':
+                        messages = self.client.beta.threads.messages.list(
+                            thread_id=thread_id
+                        )
+
+                        for msg in messages.data:
+                            if msg.role == "assistant":
+                                try:
                                     content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
-                                else:
-                                    content = str(msg.content)
+                                    logger.info(f"Assistant response: {content[:50]}...")
+                                    yield content
+                                except Exception as e:
+                                    error_msg = f"Error processing message: {str(e)}"
+                                    logger.error(error_msg, exc_info=True)
+                                    yield error_msg
+                                break
+                        break
 
-                                logger.info(f"Assistant response: {content[:50]}...")
-                                # Return content directly as string
-                                yield content
-                            except Exception as e:
-                                error_msg = f"Error processing message: {str(e)}"
-                                logger.error(error_msg)
-                                yield error_msg
-                            break
-                    break
+                    elif run_status.status in ['failed', 'cancelled', 'expired']:
+                        error_msg = f"Assistant run failed with status: {run_status.status}"
+                        logger.error(error_msg)
+                        yield error_msg
+                        break
 
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    error_msg = f"Assistant run failed with status: {run_status.status}"
-                    logger.error(error_msg)
-                    yield error_msg
-                    break
+                    time.sleep(0.5)  # Add a small delay between status checks
+
+                except Exception as e:
+                    logger.error(f"Error checking run status: {str(e)}", exc_info=True)
+                    retry_count += 1
+
+                    if retry_count >= max_retries:
+                        error_msg = f"Max retries reached, failed to get response: {str(e)}"
+                        logger.error(error_msg)
+                        yield error_msg
+                        break
+
+                    time.sleep(1)  # Wait before retrying
 
         except Exception as e:
             error_msg = f"Error in OpenAI Assistant: {str(e)}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             yield error_msg

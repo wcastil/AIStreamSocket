@@ -1,8 +1,9 @@
 from gevent import monkey
-monkey.patch_all()
+monkey.patch_all(thread=False)
 
 import os
 import logging
+import signal
 from app import app
 
 if __name__ == "__main__":
@@ -21,7 +22,17 @@ if __name__ == "__main__":
 
         # Run the Flask development server with gevent
         from gevent.pywsgi import WSGIServer
-        http_server = WSGIServer(('0.0.0.0', port), app)
+
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}. Performing graceful shutdown...")
+            http_server.stop(timeout=5)
+            logger.info("Server stopped gracefully")
+
+        # Set up signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        http_server = WSGIServer(('0.0.0.0', port), app, log=logger)
         logger.info("Server initialization complete, starting WSGI server")
         http_server.serve_forever()
 
