@@ -28,10 +28,11 @@ try:
     # Configure CORS for all routes and origins
     CORS(app, resources={
         r"/*": {
-            "origins": ["*"],
+            "origins": "*",
             "supports_credentials": True,
             "allow_headers": ["*"],
-            "expose_headers": ["*"]
+            "expose_headers": ["*"],
+            "methods": ["GET", "POST", "OPTIONS"]
         }
     })
 
@@ -67,11 +68,14 @@ except Exception as e:
 def after_request(response):
     """Modify response headers for better webview compatibility"""
     # Allow webview to properly render content
-    response.headers['X-Frame-Options'] = 'ALLOW-FROM https://*.replit.dev https://*.replit.com'
-    response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://*.replit.dev https://*.replit.com"
+    host = request.headers.get('Host', '')
+    logger.info(f"Setting security headers for request from {host}")
+
+    # Set headers to allow embedding in Replit's webview
+    response.headers['X-Frame-Options'] = 'ALLOW-FROM *'
+    response.headers['Content-Security-Policy'] = "frame-ancestors * https://*.replit.dev https://*.replit.com"
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = '*'
-    logger.info(f"Setting security headers for request from {request.headers.get('Host', 'unknown')}")
     return response
 
 @app.before_request
