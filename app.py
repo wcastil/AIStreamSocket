@@ -4,7 +4,7 @@ import time
 from flask import Flask, render_template, request, jsonify, Response, current_app
 from flask_cors import CORS
 import json
-from database import init_db, db
+from database import db
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -69,98 +69,97 @@ def vapi_chat():
     try:
         data = request.get_json()
         logger.info(f"🚀 [{SERVER_VERSION}] Processing VAPI request from {request.remote_addr}")
-        
+
         # Create app context for the request
         with app.app_context():
+            if not data or 'messages' not in data:
+                logger.warning("Invalid VAPI request - missing messages field")
+                return jsonify({
+                    "error": {
+                        "message": "Invalid request format - 'messages' field is required",
+                        "type": "invalid_request_error"
+                    }
+                }), 400
 
-        if not data or 'messages' not in data:
-            logger.warning("Invalid VAPI request - missing messages field")
-            return jsonify({
-                "error": {
-                    "message": "Invalid request format - 'messages' field is required",
-                    "type": "invalid_request_error"
-                }
-            }), 400
+            assistant = OpenAIAssistant()
+            logger.info(f"Processing VAPI request through assistant")
 
-        assistant = OpenAIAssistant()
-        logger.info(f"Processing VAPI request through assistant")
+            def generate():
+                try:
+                    with app.app_context():
+                        # Get the last user message as the current query
+                        last_message = next((msg['content'] for msg in reversed(data['messages'])
+                                         if msg['role'] == 'user'), None)
 
-        def generate():
-            try:
-                with app.app_context():
-                    # Get the last user message as the current query
-                    last_message = next((msg['content'] for msg in reversed(data['messages'])
-                                        if msg['role'] == 'user'), None)
+                        if not last_message:
+                            logger.warning("No user message found in VAPI conversation")
+                            error_response = json.dumps({
+                                "error": {
+                                    "message": "No user message found in conversation",
+                                    "type": "invalid_request_error"
+                                }
+                            })
+                            yield f"data: {error_response}\n\n"
+                            return
 
-                    if not last_message:
-                        logger.warning("No user message found in VAPI conversation")
-                        error_response = json.dumps({
-                            "error": {
-                                "message": "No user message found in conversation",
-                                "type": "invalid_request_error"
+                        # Extract session ID from request headers or use a default
+                        session_id = request.headers.get('X-Session-ID')
+
+                        # Process through the assistant with session tracking
+                        for response in assistant.stream_response(last_message, session_id=session_id):
+                            # Handle string responses
+                            content = response if isinstance(response, str) else response.get("content", "")
+
+                            chunk_data = {
+                                "id": f"chatcmpl-{os.urandom(12).hex()}",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": "custom-assistant",
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {
+                                        "role": "assistant",
+                                        "content": content
+                                    },
+                                    "finish_reason": None
+                                }]
                             }
-                        })
-                        yield f"data: {error_response}\n\n"
-                        return
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
 
-                    # Extract session ID from request headers or use a default
-                    session_id = request.headers.get('X-Session-ID')
-
-                    # Process through the assistant with session tracking
-                    for response in assistant.stream_response(last_message, session_id=session_id):
-                        # Handle string responses
-                        content = response if isinstance(response, str) else response.get("content", "")
-
-                        chunk_data = {
+                        # Send the completion message
+                        completion_data = {
                             "id": f"chatcmpl-{os.urandom(12).hex()}",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
                             "model": "custom-assistant",
                             "choices": [{
                                 "index": 0,
-                                "delta": {
-                                    "role": "assistant",
-                                    "content": content
-                                },
-                                "finish_reason": None
+                                "delta": {},
+                                "finish_reason": "stop"
                             }]
                         }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        logger.info("VAPI response completed successfully")
+                        yield f"data: {json.dumps(completion_data)}\n\n"
 
-                    # Send the completion message
-                    completion_data = {
-                        "id": f"chatcmpl-{os.urandom(12).hex()}",
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": "custom-assistant",
-                        "choices": [{
-                            "index": 0,
-                            "delta": {},
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    logger.info("VAPI response completed successfully")
-                    yield f"data: {json.dumps(completion_data)}\n\n"
+                except Exception as e:
+                    logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
+                    error_response = json.dumps({
+                        "error": {
+                            "message": str(e),
+                            "type": "api_error"
+                        }
+                    })
+                    yield f"data: {error_response}\n\n"
 
-            except Exception as e:
-                logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
-                error_response = json.dumps({
-                    "error": {
-                        "message": str(e),
-                        "type": "api_error"
-                    }
-                })
-                yield f"data: {error_response}\n\n"
-
-        return Response(
-            generate(),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
-            }
-        )
+            return Response(
+                generate(),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
 
     except Exception as e:
         logger.error(f"Error in VAPI endpoint: {str(e)}", exc_info=True)
