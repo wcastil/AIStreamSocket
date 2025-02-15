@@ -43,6 +43,102 @@ def index():
         logger.error(f"Error serving index page: {e}")
         return "Error loading chat interface", 500
 
+@app.route('/v1/chat/completions', methods=['POST'])
+def vapi_chat():
+    """VAPI LLM endpoint for chat completions"""
+    try:
+        data = request.get_json()
+        if not data or 'messages' not in data:
+            return jsonify({
+                "error": {
+                    "message": "Invalid request format - 'messages' field is required",
+                    "type": "invalid_request_error"
+                }
+            }), 400
+
+        # Process through our assistant
+        assistant = OpenAIAssistant()
+
+        def generate():
+            try:
+                # Get the last user message as the current query
+                last_message = next((msg['content'] for msg in reversed(data['messages']) 
+                                   if msg['role'] == 'user'), None)
+
+                if not last_message:
+                    error_response = json.dumps({
+                        "error": {
+                            "message": "No user message found in conversation",
+                            "type": "invalid_request_error"
+                        }
+                    })
+                    yield f"data: {error_response}\n\n"
+                    return
+
+                # Process through the assistant
+                for response in assistant.stream_response(last_message):
+                    # Handle string responses
+                    content = response if isinstance(response, str) else response.get("content", "")
+
+                    chunk_data = {
+                        "id": f"chatcmpl-{os.urandom(12).hex()}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "custom-assistant",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": content
+                            },
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                # Send the completion message
+                completion_data = {
+                    "id": f"chatcmpl-{os.urandom(12).hex()}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "custom-assistant",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
+                }
+                yield f"data: {json.dumps(completion_data)}\n\n"
+
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}", exc_info=True)
+                error_response = json.dumps({
+                    "error": {
+                        "message": str(e),
+                        "type": "api_error"
+                    }
+                })
+                yield f"data: {error_response}\n\n"
+
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error in VAPI endpoint: {str(e)}", exc_info=True)
+        return jsonify({
+            "error": {
+                "message": str(e),
+                "type": "api_error"
+            }
+        }), 500
+
 @app.route('/stream', methods=['POST'])
 def stream():
     """SSE endpoint for streaming responses"""
