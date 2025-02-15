@@ -21,8 +21,6 @@ def init_db(app):
         db.init_app(app)
 
         with app.app_context():
-            # Import models after db is initialized to avoid circular imports
-            import models  # noqa: F401
             logger.info("Creating database tables...")
             db.create_all()
             logger.info("Database initialization completed successfully")

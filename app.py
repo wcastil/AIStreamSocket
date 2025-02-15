@@ -3,10 +3,8 @@ import logging
 import time
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
-from openai_assistant import OpenAIAssistant
 import json
 from database import init_db, db
-from models import Conversation, Message
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -28,8 +26,12 @@ try:
     # Configure CORS for all routes
     CORS(app)
 
-    # Initialize database
+    # Initialize database first
     init_db(app)
+
+    # Import models and assistant after db initialization to avoid circular imports
+    from models import Conversation, Message
+    from openai_assistant import OpenAIAssistant
 
     logger.info("Flask application initialized successfully")
 except Exception as e:
@@ -69,7 +71,7 @@ def vapi_chat():
         def generate():
             try:
                 # Get the last user message as the current query
-                last_message = next((msg['content'] for msg in reversed(data['messages']) 
+                last_message = next((msg['content'] for msg in reversed(data['messages'])
                                    if msg['role'] == 'user'), None)
 
                 if not last_message:

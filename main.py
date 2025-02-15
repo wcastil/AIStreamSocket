@@ -1,9 +1,9 @@
-from gevent import monkey
-monkey.patch_all(thread=False)
+import monkey  # noqa: F401 - Import monkey patching first
 
 import os
 import logging
 import signal
+from gevent.pywsgi import WSGIServer
 from app import app
 
 if __name__ == "__main__":
@@ -20,10 +20,11 @@ if __name__ == "__main__":
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask development server on port {port}")
 
-        # Run the Flask development server with gevent
-        from gevent.pywsgi import WSGIServer
+        # Create the WSGI server
+        http_server = WSGIServer(('0.0.0.0', port), app, log=logger)
 
         def signal_handler(signum, frame):
+            """Handle shutdown signals gracefully"""
             logger.info(f"Received signal {signum}. Performing graceful shutdown...")
             http_server.stop(timeout=5)
             logger.info("Server stopped gracefully")
@@ -32,7 +33,6 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
 
-        http_server = WSGIServer(('0.0.0.0', port), app, log=logger)
         logger.info("Server initialization complete, starting WSGI server")
         http_server.serve_forever()
 
