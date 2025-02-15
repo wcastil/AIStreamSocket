@@ -5,6 +5,7 @@ from openai import OpenAI
 from models import InterviewData, Message, Conversation
 from database import db
 import time
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -22,44 +23,47 @@ class OpenAIAssistant:
 
     def get_or_create_conversation(self, session_id=None):
         """Get existing conversation or create a new one"""
-        if session_id:
-            conversation = Conversation.query.filter_by(session_id=session_id).first()
-            if conversation:
-                logger.info(f"Retrieved existing conversation for session {session_id}")
-                return conversation
+        with current_app.app_context():
+            if session_id:
+                conversation = Conversation.query.filter_by(session_id=session_id).first()
+                if conversation:
+                    logger.info(f"Retrieved existing conversation for session {session_id}")
+                    return conversation
 
-        conversation = Conversation(session_id=session_id)
-        db.session.add(conversation)
-        db.session.commit()
-        logger.info(f"Created new conversation{' for session ' + session_id if session_id else ''}")
-        return conversation
+            conversation = Conversation(session_id=session_id)
+            db.session.add(conversation)
+            db.session.commit()
+            logger.info(f"Created new conversation{' for session ' + session_id if session_id else ''}")
+            return conversation
 
     def get_conversation_history(self, conversation_id):
         """Retrieve full conversation history"""
-        messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
-        history = []
-        for msg in messages:
-            history.append({
-                "role": msg.role,
-                "content": msg.content
-            })
-        logger.info(f"Retrieved {len(history)} messages from conversation history")
-        return history
+        with current_app.app_context():
+            messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
+            history = []
+            for msg in messages:
+                history.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
+            logger.info(f"Retrieved {len(history)} messages from conversation history")
+            return history
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
         try:
             # Get or create conversation
-            try:
-                conversation = (
-                    Conversation.query.get(conversation_id) if conversation_id
-                    else self.get_or_create_conversation(session_id)
-                )
-                logger.info(f"Processing message in conversation {conversation.id}")
-            except Exception as e:
-                logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
-                yield f"Error managing conversation: {str(e)}"
-                return
+            with current_app.app_context():
+                try:
+                    conversation = (
+                        Conversation.query.get(conversation_id) if conversation_id
+                        else self.get_or_create_conversation(session_id)
+                    )
+                    logger.info(f"Processing message in conversation {conversation.id}")
+                except Exception as e:
+                    logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
+                    yield f"Error managing conversation: {str(e)}"
+                    return
 
             # Create a new thread
             try:
@@ -84,17 +88,18 @@ class OpenAIAssistant:
                 logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
 
             # Store user message in database
-            try:
-                message = Message(
-                    conversation_id=conversation.id,
-                    role='user',
-                    content=user_message
-                )
-                db.session.add(message)
-                db.session.commit()
-                logger.info(f"Stored user message in conversation {conversation.id}")
-            except Exception as e:
-                logger.error(f"Error storing user message: {str(e)}", exc_info=True)
+            with current_app.app_context():
+                try:
+                    message = Message(
+                        conversation_id=conversation.id,
+                        role='user',
+                        content=user_message
+                    )
+                    db.session.add(message)
+                    db.session.commit()
+                    logger.info(f"Stored user message in conversation {conversation.id}")
+                except Exception as e:
+                    logger.error(f"Error storing user message: {str(e)}", exc_info=True)
 
             # Add the user message to the thread
             try:
@@ -143,14 +148,15 @@ class OpenAIAssistant:
                                     content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
 
                                     # Store assistant message in database
-                                    message = Message(
-                                        conversation_id=conversation.id,
-                                        role='assistant',
-                                        content=content
-                                    )
-                                    db.session.add(message)
-                                    db.session.commit()
-                                    logger.info(f"Stored assistant response in conversation {conversation.id}")
+                                    with current_app.app_context():
+                                        message = Message(
+                                            conversation_id=conversation.id,
+                                            role='assistant',
+                                            content=content
+                                        )
+                                        db.session.add(message)
+                                        db.session.commit()
+                                        logger.info(f"Stored assistant response in conversation {conversation.id}")
 
                                     logger.info(f"Assistant response: {content[:100]}...")
                                     yield content
@@ -192,47 +198,48 @@ class OpenAIAssistant:
         Returns missing information and suggested follow-up questions
         """
         try:
-            # Retrieve all messages for this conversation
-            conversation = Conversation.query.get(conversation_id)
-            if not conversation:
-                raise ValueError(f"Conversation {conversation_id} not found")
+            with current_app.app_context():
+                # Retrieve all messages for this conversation
+                conversation = Conversation.query.get(conversation_id)
+                if not conversation:
+                    raise ValueError(f"Conversation {conversation_id} not found")
 
-            messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
+                messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
 
-            # Format conversation history
-            conversation_history = []
-            for msg in messages:
-                logger.debug(f"Processing message: {msg.role} - {msg.content[:100]}...")
-                conversation_history.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
+                # Format conversation history
+                conversation_history = []
+                for msg in messages:
+                    logger.debug(f"Processing message: {msg.role} - {msg.content[:100]}...")
+                    conversation_history.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
 
-            logger.info(f"Evaluating interview progress for conversation {conversation_id}")
-            logger.debug(f"Sending {len(conversation_history)} messages for evaluation")
+                logger.info(f"Evaluating interview progress for conversation {conversation_id}")
+                logger.debug(f"Sending {len(conversation_history)} messages for evaluation")
 
-            # Generate system message for evaluation
-            system_message = """Analyze the interview conversation and identify:
-            1. Key insights and patterns
-            2. Missing or incomplete information
-            3. Suggested follow-up questions
-            4. Areas that need clarification
+                # Generate system message for evaluation
+                system_message = """Analyze the interview conversation and identify:
+                1. Key insights and patterns
+                2. Missing or incomplete information
+                3. Suggested follow-up questions
+                4. Areas that need clarification
 
-            Respond with a concise summary and specific recommendations."""
+                Respond with a concise summary and specific recommendations."""
 
-            # Request evaluation from OpenAI
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_message},
-                    *conversation_history
-                ]
-            )
+                # Request evaluation from OpenAI
+                response = self.client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        *conversation_history
+                    ]
+                )
 
-            evaluation = response.choices[0].message.content
-            logger.info("Interview evaluation completed successfully")
+                evaluation = response.choices[0].message.content
+                logger.info("Interview evaluation completed successfully")
 
-            return evaluation
+                return evaluation
 
         except Exception as e:
             error_msg = f"Error evaluating interview progress: {str(e)}"
