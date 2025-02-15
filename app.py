@@ -1,6 +1,3 @@
-from gevent import monkey
-monkey.patch_all()
-
 import os
 import logging
 import time
@@ -8,7 +5,8 @@ from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 from openai_assistant import OpenAIAssistant
 import json
-import database
+from database import init_db, db
+from models import Conversation, Message
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -25,13 +23,13 @@ logger.info(f"Starting interview server {SERVER_VERSION}")
 try:
     # Initialize Flask
     app = Flask(__name__)
-    app.secret_key = os.environ.get("SESSION_SECRET", "default-secret-key")
+    app.secret_key = os.environ.get("SESSION_SECRET")
 
     # Configure CORS for all routes
     CORS(app)
 
-    # Import database configuration
-    database.init_db(app)
+    # Initialize database
+    init_db(app)
 
     logger.info("Flask application initialized successfully")
 except Exception as e:
