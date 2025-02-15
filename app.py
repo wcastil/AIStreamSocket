@@ -28,7 +28,6 @@ try:
     CORS(app)
 
     # Import database configuration
-    
     database.init_db(app)
 
     logger.info("Flask application initialized successfully")
@@ -50,7 +49,11 @@ def vapi_chat():
     """VAPI LLM endpoint for chat completions"""
     try:
         data = request.get_json()
+        logger.info("🔹 Received VAPI request")
+        logger.debug(f"🔹 VAPI request data:\n{json.dumps(data, indent=2)}")
+
         if not data or 'messages' not in data:
+            logger.warning("❌ Invalid VAPI request - missing messages field")
             return jsonify({
                 "error": {
                     "message": "Invalid request format - 'messages' field is required",
@@ -60,6 +63,7 @@ def vapi_chat():
 
         # Process through our assistant
         assistant = OpenAIAssistant()
+        logger.info("🔹 Processing VAPI request through assistant")
 
         def generate():
             try:
@@ -68,6 +72,7 @@ def vapi_chat():
                                    if msg['role'] == 'user'), None)
 
                 if not last_message:
+                    logger.warning("❌ No user message found in VAPI conversation")
                     error_response = json.dumps({
                         "error": {
                             "message": "No user message found in conversation",
@@ -78,15 +83,16 @@ def vapi_chat():
                     return
 
                 # Create or get conversation for this session
-                conversation = Conversation() # Assuming Conversation class is defined elsewhere
-                db.session.add(conversation) # Assuming db is defined and initialized elsewhere
+                conversation = Conversation()
+                db.session.add(conversation)
                 db.session.commit()
-                logger.debug(f"🔹 Created new conversation: {conversation.id}")
+                logger.info(f"🔹 Created new conversation for VAPI request: {conversation.id}")
 
                 # Process through the assistant with conversation tracking
                 for response in assistant.stream_response(last_message, conversation_id=conversation.id):
                     # Handle string responses
                     content = response if isinstance(response, str) else response.get("content", "")
+                    logger.debug(f"🔹 Streaming VAPI response chunk: {content[:100]}...")
 
                     chunk_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
@@ -107,9 +113,9 @@ def vapi_chat():
                 # Trigger asynchronous evaluation after response
                 try:
                     evaluation = assistant.evaluate_interview_progress(conversation.id)
-                    logger.info(f"🔹 Interview evaluation complete:\n{evaluation[:200]}...")
+                    logger.info(f"🔹 VAPI interview evaluation complete:\n{evaluation[:200]}...")
                 except Exception as e:
-                    logger.error(f"Error in async evaluation: {str(e)}", exc_info=True)
+                    logger.error(f"Error in VAPI async evaluation: {str(e)}", exc_info=True)
 
                 # Send the completion message
                 completion_data = {
@@ -123,10 +129,11 @@ def vapi_chat():
                         "finish_reason": "stop"
                     }]
                 }
+                logger.info("🔹 VAPI response completed successfully")
                 yield f"data: {json.dumps(completion_data)}\n\n"
 
             except Exception as e:
-                logger.error(f"Streaming error: {str(e)}", exc_info=True)
+                logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
                 error_response = json.dumps({
                     "error": {
                         "message": str(e),
