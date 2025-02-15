@@ -23,18 +23,27 @@ class OpenAIAssistant:
 
     def get_or_create_conversation(self, session_id=None):
         """Get existing conversation or create a new one"""
-        with current_app.app_context():
-            if session_id:
-                conversation = Conversation.query.filter_by(session_id=session_id).first()
-                if conversation:
-                    logger.info(f"Retrieved existing conversation for session {session_id}")
-                    return conversation
+        try:
+            with current_app.app_context():
+                if session_id:
+                    conversation = Conversation.query.filter_by(session_id=session_id).first()
+                    if conversation:
+                        logger.info(f"Retrieved existing conversation for session {session_id}")
+                        return conversation
 
-            conversation = Conversation(session_id=session_id)
-            db.session.add(conversation)
-            db.session.commit()
-            logger.info(f"Created new conversation{' for session ' + session_id if session_id else ''}")
-            return conversation
+                # Create new conversation within the session
+                conversation = Conversation(session_id=session_id)
+                db.session.add(conversation)
+                db.session.commit()
+
+                # Refresh the conversation object to ensure it's bound to the session
+                db.session.refresh(conversation)
+
+                logger.info(f"Created new conversation{' for session ' + session_id if session_id else ''}")
+                return conversation
+        except Exception as e:
+            logger.error(f"Error in get_or_create_conversation: {str(e)}", exc_info=True)
+            raise
 
     def get_conversation_history(self, conversation_id):
         """Retrieve full conversation history"""
@@ -52,43 +61,33 @@ class OpenAIAssistant:
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
         try:
-            # Get or create conversation
+            # Get or create conversation within app context
             with current_app.app_context():
                 try:
-                    conversation = (
-                        Conversation.query.get(conversation_id) if conversation_id
-                        else self.get_or_create_conversation(session_id)
-                    )
+                    if conversation_id:
+                        conversation = Conversation.query.get(conversation_id)
+                    else:
+                        conversation = self.get_or_create_conversation(session_id)
+
+                    if not conversation:
+                        raise ValueError("Failed to create or retrieve conversation")
+
                     logger.info(f"Processing message in conversation {conversation.id}")
                 except Exception as e:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
                     return
 
-            # Create a new thread
-            try:
-                thread = self.client.beta.threads.create()
-                logger.info(f"Created new thread {thread.id}")
-            except Exception as e:
-                logger.error(f"Error creating thread: {str(e)}", exc_info=True)
-                yield f"Error creating conversation thread: {str(e)}"
-                return
+                # Create a new thread
+                try:
+                    thread = self.client.beta.threads.create()
+                    logger.info(f"Created new thread {thread.id}")
+                except Exception as e:
+                    logger.error(f"Error creating thread: {str(e)}", exc_info=True)
+                    yield f"Error creating conversation thread: {str(e)}"
+                    return
 
-            # Get conversation history and add to thread
-            try:
-                history = self.get_conversation_history(conversation.id)
-                for msg in history:
-                    self.client.beta.threads.messages.create(
-                        thread_id=thread.id,
-                        role=msg["role"],
-                        content=msg["content"]
-                    )
-                logger.info(f"Added {len(history)} historical messages to thread")
-            except Exception as e:
-                logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
-
-            # Store user message in database
-            with current_app.app_context():
+                # Store user message in database
                 try:
                     message = Message(
                         conversation_id=conversation.id,
@@ -100,92 +99,106 @@ class OpenAIAssistant:
                     logger.info(f"Stored user message in conversation {conversation.id}")
                 except Exception as e:
                     logger.error(f"Error storing user message: {str(e)}", exc_info=True)
+                    yield f"Error storing message: {str(e)}"
+                    return
 
-            # Add the user message to the thread
-            try:
-                self.client.beta.threads.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content=user_message
-                )
-            except Exception as e:
-                logger.error(f"Error adding message to thread: {str(e)}", exc_info=True)
-                yield f"Error adding message to conversation: {str(e)}"
-                return
-
-            # Run the assistant
-            try:
-                logger.info("Starting assistant run")
-                run = self.client.beta.threads.runs.create(
-                    thread_id=thread.id,
-                    assistant_id=self.assistant_id
-                )
-            except Exception as e:
-                logger.error(f"Error starting assistant run: {str(e)}", exc_info=True)
-                yield f"Error starting conversation: {str(e)}"
-                return
-
-            # Poll for response and stream it
-            max_retries = 3
-            retry_count = 0
-
-            while True:
+                # Get conversation history and add to thread
                 try:
-                    run_status = self.client.beta.threads.runs.retrieve(
-                        thread_id=thread.id,
-                        run_id=run.id
-                    )
+                    history = self.get_conversation_history(conversation.id)
+                    for msg in history:
+                        self.client.beta.threads.messages.create(
+                            thread_id=thread.id,
+                            role=msg["role"],
+                            content=msg["content"]
+                        )
+                    logger.info(f"Added {len(history)} historical messages to thread")
+                except Exception as e:
+                    logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
 
-                    if run_status.status == 'completed':
-                        messages = self.client.beta.threads.messages.list(
-                            thread_id=thread.id
+                # Add the user message to the thread
+                try:
+                    self.client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=user_message
+                    )
+                except Exception as e:
+                    logger.error(f"Error adding message to thread: {str(e)}", exc_info=True)
+                    yield f"Error adding message to conversation: {str(e)}"
+                    return
+
+                # Run the assistant
+                try:
+                    logger.info("Starting assistant run")
+                    run = self.client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id=self.assistant_id
+                    )
+                except Exception as e:
+                    logger.error(f"Error starting assistant run: {str(e)}", exc_info=True)
+                    yield f"Error starting conversation: {str(e)}"
+                    return
+
+                # Poll for response and stream it
+                max_retries = 3
+                retry_count = 0
+
+                while True:
+                    try:
+                        run_status = self.client.beta.threads.runs.retrieve(
+                            thread_id=thread.id,
+                            run_id=run.id
                         )
 
-                        # Get the latest assistant message
-                        for msg in messages.data:
-                            if msg.role == "assistant":
-                                try:
-                                    content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
+                        if run_status.status == 'completed':
+                            messages = self.client.beta.threads.messages.list(
+                                thread_id=thread.id
+                            )
 
-                                    # Store assistant message in database
-                                    with current_app.app_context():
-                                        message = Message(
+                            # Get the latest assistant message
+                            for msg in messages.data:
+                                if msg.role == "assistant":
+                                    try:
+                                        content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
+
+                                        # Store assistant message in database
+                                        assistant_message = Message(
                                             conversation_id=conversation.id,
                                             role='assistant',
                                             content=content
                                         )
-                                        db.session.add(message)
+                                        db.session.add(assistant_message)
                                         db.session.commit()
+
                                         logger.info(f"Stored assistant response in conversation {conversation.id}")
+                                        logger.info(f"Assistant response: {content[:100]}...")
+                                        yield content
+                                    except Exception as e:
+                                        error_msg = f"Error processing message: {str(e)}"
+                                        logger.error(error_msg, exc_info=True)
+                                        yield error_msg
+                                    break
+                            break
 
-                                    logger.info(f"Assistant response: {content[:100]}...")
-                                    yield content
-                                except Exception as e:
-                                    error_msg = f"Error processing message: {str(e)}"
-                                    logger.error(error_msg, exc_info=True)
-                                    yield error_msg
-                                break
-                        break
+                        elif run_status.status in ['failed', 'cancelled', 'expired']:
+                            error_msg = f"Assistant run failed with status: {run_status.status}"
+                            logger.error(error_msg)
+                            yield error_msg
+                            break
 
-                    elif run_status.status in ['failed', 'cancelled', 'expired']:
-                        error_msg = f"Assistant run failed with status: {run_status.status}"
-                        logger.error(error_msg)
-                        yield error_msg
-                        break
+                        time.sleep(0.5)
 
-                    time.sleep(0.5)
+                    except Exception as e:
+                        logger.error(f"Error checking run status: {str(e)}", exc_info=True)
+                        retry_count += 1
 
-                except Exception as e:
-                    logger.error(f"Error checking run status: {str(e)}", exc_info=True)
-                    retry_count += 1
+                        if retry_count >= max_retries:
+                            error_msg = f"Max retries reached, failed to get response: {str(e)}"
+                            logger.error(error_msg)
+                            yield error_msg
+                            break
 
-                    if retry_count >= max_retries:
-                        error_msg = f"Max retries reached, failed to get response: {str(e)}"
-                        logger.error(error_msg)
-                        yield error_msg
-                        break
-
-                    time.sleep(1)
+                        time.sleep(1)
 
         except Exception as e:
             error_msg = f"Error in OpenAI Assistant: {str(e)}"
