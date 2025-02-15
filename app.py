@@ -26,11 +26,27 @@ try:
     # Configure CORS for all routes
     CORS(app)
 
-    # Initialize database first
-    init_db(app)
+    # Configure SQLAlchemy
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # Import models and assistant after db initialization to avoid circular imports
-    from models import Conversation, Message
+    # Initialize database first
+    db.init_app(app)
+
+    # Import models after db initialization
+    from models import Conversation, Message, InterviewData
+
+    # Create all tables within app context
+    with app.app_context():
+        logger.info("Creating database tables...")
+        db.create_all()
+        logger.info("Database tables created successfully")
+
+    # Import assistant after db and model initialization
     from openai_assistant import OpenAIAssistant
 
     logger.info("Flask application initialized successfully")
