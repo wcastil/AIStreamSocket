@@ -124,16 +124,12 @@ def vapi_chat():
                 }
             }), 400
 
-        # Extract session ID from request headers
+        # Extract session ID from request headers - now optional
         session_id = request.headers.get('X-Session-ID')
         if not session_id:
-            logger.warning("No session ID provided in VAPI request")
-            return jsonify({
-                "error": {
-                    "message": "Session ID is required",
-                    "type": "invalid_request_error"
-                }
-            }), 400
+            logger.info("No session ID provided in VAPI request, creating a new conversation")
+        else:
+            logger.info(f"Using provided session ID: {session_id}")
 
         def generate():
             # Create a new application context for the generator
@@ -143,7 +139,7 @@ def vapi_chat():
                 assistant = OpenAIAssistant()
                 logger.info(f"Processing VAPI request through assistant")
 
-                # Process through the assistant with session tracking
+                # Process through the assistant with optional session tracking
                 for response in assistant.stream_response(last_message, session_id=session_id):
                     # Handle string responses
                     content = response if isinstance(response, str) else response.get("content", "")
