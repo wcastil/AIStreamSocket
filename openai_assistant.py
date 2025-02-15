@@ -66,8 +66,14 @@ class OpenAIAssistant:
                 try:
                     if conversation_id:
                         conversation = Conversation.query.get(conversation_id)
-                    else:
+                    elif session_id:
                         conversation = self.get_or_create_conversation(session_id)
+                    else:
+                        # For VAPI requests, create a new conversation without session
+                        conversation = Conversation()
+                        db.session.add(conversation)
+                        db.session.commit()
+                        db.session.refresh(conversation)
 
                     if not conversation:
                         raise ValueError("Failed to create or retrieve conversation")

@@ -69,6 +69,9 @@ def vapi_chat():
     try:
         data = request.get_json()
         logger.info(f"🚀 [{SERVER_VERSION}] Processing VAPI request from {request.remote_addr}")
+        
+        # Create app context for the request
+        with app.app_context():
 
         if not data or 'messages' not in data:
             logger.warning("Invalid VAPI request - missing messages field")
