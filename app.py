@@ -8,8 +8,7 @@ from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 from openai_assistant import OpenAIAssistant
 import json
-import database # Assuming this import is already present
-
+import database
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -18,6 +17,10 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+# Add version identifier
+SERVER_VERSION = "v2.0-2024-02-15"
+logger.info(f"Starting interview server {SERVER_VERSION}")
 
 try:
     # Initialize Flask
@@ -49,8 +52,8 @@ def vapi_chat():
     """VAPI LLM endpoint for chat completions"""
     try:
         data = request.get_json()
-        logger.info("🔹 Received VAPI request")
-        logger.debug(f"🔹 VAPI request data:\n{json.dumps(data, indent=2)}")
+        logger.info(f"🚀 [{SERVER_VERSION}] Received VAPI request from {request.remote_addr}")
+        logger.debug(f"📝 VAPI request data:\n{json.dumps(data, indent=2)}")
 
         if not data or 'messages' not in data:
             logger.warning("❌ Invalid VAPI request - missing messages field")
@@ -63,7 +66,7 @@ def vapi_chat():
 
         # Process through our assistant
         assistant = OpenAIAssistant()
-        logger.info("🔹 Processing VAPI request through assistant")
+        logger.info(f"🔄 [{SERVER_VERSION}] Processing VAPI request through assistant")
 
         def generate():
             try:
@@ -86,7 +89,7 @@ def vapi_chat():
                 conversation = Conversation()
                 db.session.add(conversation)
                 db.session.commit()
-                logger.info(f"🔹 Created new conversation for VAPI request: {conversation.id}")
+                logger.info(f"✨ [{SERVER_VERSION}] Created new conversation for VAPI request: {conversation.id}")
 
                 # Process through the assistant with conversation tracking
                 for response in assistant.stream_response(last_message, conversation_id=conversation.id):
