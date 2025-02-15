@@ -8,7 +8,7 @@ from database import init_db, db
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Change from DEBUG to INFO to reduce noise
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -52,11 +52,10 @@ def vapi_chat():
     """VAPI LLM endpoint for chat completions"""
     try:
         data = request.get_json()
-        logger.info(f"🚀 [{SERVER_VERSION}] Received VAPI request from {request.remote_addr}")
-        logger.debug(f"📝 VAPI request data:\n{json.dumps(data, indent=2)}")
+        logger.info(f"🚀 [{SERVER_VERSION}] Processing VAPI request from {request.remote_addr}")
 
         if not data or 'messages' not in data:
-            logger.warning("❌ Invalid VAPI request - missing messages field")
+            logger.warning("Invalid VAPI request - missing messages field")
             return jsonify({
                 "error": {
                     "message": "Invalid request format - 'messages' field is required",
@@ -64,9 +63,8 @@ def vapi_chat():
                 }
             }), 400
 
-        # Process through our assistant
         assistant = OpenAIAssistant()
-        logger.info(f"🔄 [{SERVER_VERSION}] Processing VAPI request through assistant")
+        logger.info(f"Processing VAPI request through assistant")
 
         def generate():
             try:
@@ -76,7 +74,7 @@ def vapi_chat():
                                     if msg['role'] == 'user'), None)
 
                     if not last_message:
-                        logger.warning("❌ No user message found in VAPI conversation")
+                        logger.warning("No user message found in VAPI conversation")
                         error_response = json.dumps({
                             "error": {
                                 "message": "No user message found in conversation",
@@ -90,13 +88,12 @@ def vapi_chat():
                     conversation = Conversation()
                     db.session.add(conversation)
                     db.session.commit()
-                    logger.info(f"✨ [{SERVER_VERSION}] Created new conversation for VAPI request: {conversation.id}")
+                    logger.info(f"Created new conversation for VAPI request: {conversation.id}")
 
                     # Process through the assistant with conversation tracking
                     for response in assistant.stream_response(last_message, conversation_id=conversation.id):
                         # Handle string responses
                         content = response if isinstance(response, str) else response.get("content", "")
-                        logger.debug(f"🔹 Streaming VAPI response chunk: {content[:100]}...")
 
                         chunk_data = {
                             "id": f"chatcmpl-{os.urandom(12).hex()}",
@@ -126,7 +123,7 @@ def vapi_chat():
                             "finish_reason": "stop"
                         }]
                     }
-                    logger.info("🔹 VAPI response completed successfully")
+                    logger.info("VAPI response completed successfully")
                     yield f"data: {json.dumps(completion_data)}\n\n"
 
             except Exception as e:
