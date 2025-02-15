@@ -9,6 +9,7 @@ class Conversation(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     messages = db.relationship('Message', backref='conversation', lazy=True, cascade='all, delete-orphan')
     interview_data = db.relationship('InterviewData', backref='conversation', uselist=False, cascade='all, delete-orphan')
+    session_id = db.Column(db.String(100), unique=True)  # Added for session tracking
 
 class Message(db.Model):
     __tablename__ = 'messages'

@@ -84,14 +84,11 @@ def vapi_chat():
                         yield f"data: {error_response}\n\n"
                         return
 
-                    # Create new conversation
-                    conversation = Conversation()
-                    db.session.add(conversation)
-                    db.session.commit()
-                    logger.info(f"Created new conversation for VAPI request: {conversation.id}")
+                    # Extract session ID from request headers or use a default
+                    session_id = request.headers.get('X-Session-ID')
 
-                    # Process through the assistant with conversation tracking
-                    for response in assistant.stream_response(last_message, conversation_id=conversation.id):
+                    # Process through the assistant with session tracking
+                    for response in assistant.stream_response(last_message, session_id=session_id):
                         # Handle string responses
                         content = response if isinstance(response, str) else response.get("content", "")
 
@@ -163,13 +160,13 @@ def stream():
 
     data = request.get_json()
     message = data.get('message')
-    is_voice = data.get('is_voice', False)
+    session_id = data.get('session_id')  # Optional session ID for conversation continuity
 
     if not message:
         return jsonify({"error": "Message field is required"}), 400
 
     return Response(
-        stream_openai_response(message, is_voice=is_voice),
+        stream_openai_response(message, session_id),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
@@ -178,11 +175,11 @@ def stream():
         }
     )
 
-def stream_openai_response(message, is_voice=False):
+def stream_openai_response(message, session_id=None):
     """Stream OpenAI responses using server-sent events"""
     assistant = OpenAIAssistant()
     try:
-        for response in assistant.stream_response(message):
+        for response in assistant.stream_response(message, session_id=session_id):
             # Ensure response is treated as plain text
             if isinstance(response, str):
                 data = {
