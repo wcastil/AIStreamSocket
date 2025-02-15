@@ -71,7 +71,7 @@ def vapi_chat():
                 with app.app_context():
                     # Get the last user message as the current query
                     last_message = next((msg['content'] for msg in reversed(data['messages'])
-                                    if msg['role'] == 'user'), None)
+                                        if msg['role'] == 'user'), None)
 
                     if not last_message:
                         logger.warning("No user message found in VAPI conversation")
@@ -177,28 +177,33 @@ def stream():
 
 def stream_openai_response(message, session_id=None):
     """Stream OpenAI responses using server-sent events"""
-    assistant = OpenAIAssistant()
     try:
-        for response in assistant.stream_response(message, session_id=session_id):
-            # Ensure response is treated as plain text
-            if isinstance(response, str):
-                data = {
-                    "type": "text",
-                    "chunk": response,
-                    "done": False
-                }
-            else:
-                # Handle potential dictionary responses
-                data = {
-                    "type": response.get("type", "text"),
-                    "chunk": response.get("content", ""),
-                    "done": False
-                }
+        # Initialize OpenAI Assistant within app context
+        with app.app_context():
+            assistant = OpenAIAssistant()
 
-            yield f"data: {json.dumps(data)}\n\n"
+            # Stream responses with proper context management
+            for response in assistant.stream_response(message, session_id=session_id):
+                # Ensure response is treated as plain text
+                if isinstance(response, str):
+                    data = {
+                        "type": "text",
+                        "chunk": response,
+                        "done": False
+                    }
+                else:
+                    # Handle potential dictionary responses
+                    data = {
+                        "type": response.get("type", "text"),
+                        "chunk": response.get("content", ""),
+                        "done": False
+                    }
 
-        # Send completion message
-        yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
+                yield f"data: {json.dumps(data)}\n\n"
+
+            # Send completion message
+            yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
+
     except Exception as e:
         logger.error(f"Error in stream_openai_response: {str(e)}", exc_info=True)
         error_data = json.dumps({"error": str(e)})
