@@ -20,49 +20,99 @@ class OpenAIAssistant:
             logger.error(f"Failed to initialize OpenAI client: {str(e)}", exc_info=True)
             raise
 
-    def _extract_interview_data(self, user_input, current_data):
-        """Extract structured interview data from user input"""
+    def _extract_interview_data(self, user_input, interview_data):
+        """Extract structured interview data from user input and generate next question"""
         try:
-            # Define the data extraction functions available to the assistant
             tools = [{
                 "type": "function",
                 "function": {
-                    "name": "update_interview_data",
-                    "description": "Update the interview data model with extracted information",
+                    "name": "update_interview_data_model",
+                    "description": "Update the interview data model with extracted information and generate next question",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "field_category": {
-                                "type": "string",
-                                "enum": [
-                                    "core_values_and_priorities",
-                                    "personality_and_emotional_profile",
-                                    "decision_making_framework",
-                                    "behavioral_patterns",
-                                    "relationships_and_interactions",
-                                    "growth_and_learning",
-                                    "creativity_and_divergence"
-                                ]
+                            "updates": {
+                                "type": "object",
+                                "properties": {
+                                    "core_values_and_priorities": {
+                                        "type": "object",
+                                        "properties": {
+                                            "personal_values": {"type": "array", "items": {"type": "string"}},
+                                            "professional_values": {"type": "array", "items": {"type": "string"}},
+                                            "prioritization_rules": {"type": "array", "items": {"type": "string"}}
+                                        }
+                                    },
+                                    "personality_and_emotional_profile": {
+                                        "type": "object",
+                                        "properties": {
+                                            "emotional_regulation": {"type": "string"},
+                                            "leadership_style": {"type": "string"},
+                                            "decision_making_tendencies": {"type": "string"}
+                                        }
+                                    },
+                                    "decision_making_framework": {
+                                        "type": "object",
+                                        "properties": {
+                                            "analytical_intuitive_balance": {"type": "number"},
+                                            "risk_tolerance": {"type": "string"},
+                                            "timeframe_focus": {"type": "string"}
+                                        }
+                                    },
+                                    "behavioral_patterns": {
+                                        "type": "object",
+                                        "properties": {
+                                            "stress_response": {"type": "string"},
+                                            "conflict_resolution": {"type": "string"},
+                                            "work_life_balance": {"type": "string"}
+                                        }
+                                    },
+                                    "relationships_and_interactions": {
+                                        "type": "object",
+                                        "properties": {
+                                            "collaboration_style": {"type": "string"},
+                                            "trust_building": {"type": "string"},
+                                            "conflict_handling": {"type": "string"}
+                                        }
+                                    },
+                                    "growth_and_learning": {
+                                        "type": "object",
+                                        "properties": {
+                                            "preferred_learning": {"type": "string"},
+                                            "reflection_tendencies": {"type": "string"},
+                                            "openness_to_change": {"type": "number"}
+                                        }
+                                    },
+                                    "creativity_and_divergence": {
+                                        "type": "object",
+                                        "properties": {
+                                            "divergent_thinking": {"type": "string"},
+                                            "contrarian_tendencies": {"type": "string"},
+                                            "paradox_handling": {"type": "string"},
+                                            "deviation_conditions": {"type": "string"}
+                                        }
+                                    }
+                                }
                             },
-                            "field_name": {"type": "string"},
-                            "value": {"type": "string"},
-                            "missing_fields": {
-                                "type": "array",
-                                "items": {"type": "string"}
-                            }
+                            "missing_fields": {"type": "array", "items": {"type": "string"}},
+                            "next_question": {"type": "string", "description": "The next question to ask based on missing fields"}
                         },
-                        "required": ["field_category", "field_name", "value"]
+                        "required": ["updates", "missing_fields", "next_question"]
                     }
                 }
             }]
 
+            system_prompt = """You are an expert interviewer focusing on understanding the person deeply.
+            After each user response:
+            1. Extract ALL relevant information that fits our data model
+            2. Update the interview data model using the update_interview_data_model function
+            3. Identify missing or incomplete information
+            4. Generate a targeted follow-up question
+
+            Always call update_interview_data_model with every response, even if only updating missing_fields.
+            Focus questions on gathering missing information systematically."""
+
             messages = [
-                {
-                    "role": "system",
-                    "content": """You are an expert at extracting structured interview data. 
-                    Analyze user responses and extract relevant information for our data model.
-                    If you identify information that fits into our model, call the update_interview_data function."""
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_input}
             ]
 
@@ -70,13 +120,13 @@ class OpenAIAssistant:
                 model="gpt-4",
                 messages=messages,
                 tools=tools,
-                tool_choice="auto"
+                tool_choice={"type": "function", "function": {"name": "update_interview_data_model"}}
             )
 
             return response.choices[0].message
 
         except Exception as e:
-            logger.error(f"Error in extracting interview data: {e}")
+            logger.error(f"Error in extracting interview data: {str(e)}", exc_info=True)
             return None
 
     def stream_response(self, user_message, thread_id=None, interview_data=None):
@@ -92,6 +142,35 @@ class OpenAIAssistant:
                 yield f"Error creating conversation thread: {str(e)}"
                 return
 
+            # First, extract structured data and get next question
+            extraction_result = self._extract_interview_data(user_message, interview_data)
+            logger.info("Extraction result received")
+
+            next_question = None
+            if extraction_result and hasattr(extraction_result, 'tool_calls'):
+                for tool_call in extraction_result.tool_calls:
+                    if tool_call.function.name == "update_interview_data_model":
+                        try:
+                            data = json.loads(tool_call.function.arguments)
+                            logger.info(f"Extracted data: {json.dumps(data, indent=2)}")
+
+                            # Update interview data model
+                            for category, updates in data['updates'].items():
+                                if hasattr(interview_data, category):
+                                    for field, value in updates.items():
+                                        if hasattr(interview_data, field):
+                                            setattr(interview_data, field, value)
+                                            logger.info(f"Updated {category}.{field}")
+
+                            # Update missing fields
+                            interview_data.missing_fields = data['missing_fields']
+                            next_question = data['next_question']
+
+                            db.session.commit()
+                            logger.info("Database updated successfully")
+                        except Exception as e:
+                            logger.error(f"Error updating interview data: {str(e)}", exc_info=True)
+
             # Add the user message to the thread
             try:
                 self.client.beta.threads.messages.create(
@@ -103,33 +182,6 @@ class OpenAIAssistant:
                 logger.error(f"Error adding message to thread: {str(e)}", exc_info=True)
                 yield f"Error adding message to conversation: {str(e)}"
                 return
-
-            # First, extract structured data from the user's message
-            if interview_data:
-                extraction_result = self._extract_interview_data(user_message, interview_data)
-                logger.info("Extraction result received")
-
-                if extraction_result and hasattr(extraction_result, 'tool_calls'):
-                    logger.info(f"Found {len(extraction_result.tool_calls)} tool calls")
-                    # Process the extracted data
-                    for tool_call in extraction_result.tool_calls:
-                        if tool_call.function.name == "update_interview_data":
-                            extracted_data = json.loads(tool_call.function.arguments)
-                            logger.info(f"Function call detected: update_interview_data")
-                            logger.info(f"Arguments: {json.dumps(extracted_data, indent=2)}")
-
-                            # Update the interview data model
-                            for field_name, value in extracted_data.items():
-                                if hasattr(interview_data, field_name):
-                                    setattr(interview_data, field_name, value)
-                                    logger.info(f"Updated field {field_name} with value: {value}")
-
-                            if "missing_fields" in extracted_data:
-                                interview_data.missing_fields = extracted_data["missing_fields"]
-                                logger.info(f"Missing fields updated: {extracted_data['missing_fields']}")
-
-                            db.session.commit()
-                            logger.info("Database updated successfully")
 
             # Run the assistant
             try:
@@ -154,18 +206,22 @@ class OpenAIAssistant:
                         run_id=run.id
                     )
 
-                    logger.info(f"Run status: {run_status.status}")
-
                     if run_status.status == 'completed':
                         messages = self.client.beta.threads.messages.list(
                             thread_id=thread_id
                         )
 
+                        # Stream the response and append the next question
                         for msg in messages.data:
                             if msg.role == "assistant":
                                 try:
                                     content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
-                                    logger.info(f"Assistant response: {content[:50]}...")
+
+                                    # If we have a next question, append it
+                                    if next_question:
+                                        content = f"{content}\n\n{next_question}"
+
+                                    logger.info(f"Assistant response with next question: {content[:100]}...")
                                     yield content
                                 except Exception as e:
                                     error_msg = f"Error processing message: {str(e)}"
@@ -180,7 +236,7 @@ class OpenAIAssistant:
                         yield error_msg
                         break
 
-                    time.sleep(0.5)  # Add a small delay between status checks
+                    time.sleep(0.5)
 
                 except Exception as e:
                     logger.error(f"Error checking run status: {str(e)}", exc_info=True)
@@ -192,7 +248,7 @@ class OpenAIAssistant:
                         yield error_msg
                         break
 
-                    time.sleep(1)  # Wait before retrying
+                    time.sleep(1)
 
         except Exception as e:
             error_msg = f"Error in OpenAI Assistant: {str(e)}"
