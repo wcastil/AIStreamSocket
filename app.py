@@ -20,11 +20,18 @@ logger.info(f"Starting interview server {SERVER_VERSION}")
 
 try:
     # Initialize Flask
-    app = Flask(__name__)
+    app = Flask(__name__, 
+                static_folder='static',
+                template_folder='templates')
     app.secret_key = os.environ.get("SESSION_SECRET")
 
-    # Configure CORS for all routes
-    CORS(app)
+    # Configure CORS for all routes and origins
+    CORS(app, resources={
+        r"/*": {
+            "origins": ["*"],
+            "supports_credentials": True
+        }
+    })
 
     # Configure SQLAlchemy
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
@@ -58,6 +65,7 @@ except Exception as e:
 def index():
     """Render the chat interface"""
     try:
+        logger.info("Serving index page")
         return render_template('index.html')
     except Exception as e:
         logger.error(f"Error serving index page: {e}")
@@ -81,7 +89,7 @@ def vapi_chat():
 
         # Get the last user message as the current query
         last_message = next((msg['content'] for msg in reversed(data['messages'])
-                         if msg['role'] == 'user'), None)
+                             if msg['role'] == 'user'), None)
 
         if not last_message:
             logger.warning("No user message found in VAPI conversation")
