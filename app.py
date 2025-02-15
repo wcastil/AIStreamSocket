@@ -67,7 +67,15 @@ def after_request(response):
     # Allow webview to properly render content
     response.headers['X-Frame-Options'] = 'ALLOW-FROM https://*.replit.dev'
     response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://*.replit.dev https://*.replit.com"
+    logger.info(f"Setting security headers for request from {request.headers.get('Host', 'unknown')}")
     return response
+
+@app.before_request
+def before_request():
+    """Log incoming request details for debugging"""
+    logger.info(f"Received request: {request.method} {request.path}")
+    logger.info(f"Request headers: {dict(request.headers)}")
+    return None
 
 @app.route('/', methods=['GET'])
 def index():

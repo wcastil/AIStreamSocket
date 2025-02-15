@@ -20,7 +20,7 @@ if __name__ == "__main__":
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask development server on port {port}")
 
-        # Create the WSGI server
+        # Create the WSGI server with detailed logging
         http_server = WSGIServer(('0.0.0.0', port), app, log=logger)
 
         def signal_handler(signum, frame):
