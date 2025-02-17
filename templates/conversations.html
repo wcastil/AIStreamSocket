@@ -36,9 +36,32 @@
             font-size: 0.9em;
             color: #fff;
         }
+        #session-controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2c3338;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .btn-increment {
+            background-color: #198754;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+        }
+        .btn-increment:hover {
+            background-color: #157347;
+        }
     </style>
 </head>
 <body class="container py-4">
+    <div id="session-controls">
+        <button onclick="incrementSession()" class="btn-increment">New Session</button>
+    </div>
+
     <h1>Interview Conversations</h1>
     <p class="text-muted">Displaying all recorded interview sessions and their messages.</p>
 
@@ -75,5 +98,24 @@
             </div>
         </div>
     {% endfor %}
+
+    <script>
+        async function incrementSession() {
+            try {
+                const response = await fetch('/admin/session?action=increment', {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                if (data.new_session) {
+                    alert('Session updated! New session ID: ' + data.new_session);
+                    // Reload the page to show the latest conversations
+                    window.location.reload();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to update session');
+            }
+        }
+    </script>
 </body>
 </html>
