@@ -56,7 +56,8 @@ class OpenAIAssistant:
                     "role": msg.role,
                     "content": msg.content
                 })
-            logger.info(f"Retrieved {len(history)} messages from conversation history")
+            logger.info(f"Retrieved conversation history for ID {conversation_id}: {len(history)} messages")
+            logger.debug(f"Full conversation history: {json.dumps(history, indent=2)}")
             return history
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
@@ -117,6 +118,7 @@ class OpenAIAssistant:
                             content=msg["content"]
                         )
                     logger.info(f"🔹 Added {len(history)} historical messages to thread for session {session_id}")
+                    logger.debug(f"Thread {thread.id} now contains full history")
                 except Exception as e:
                     logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
 
