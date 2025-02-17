@@ -69,7 +69,7 @@ class OpenAIAssistant:
                     elif session_id:
                         conversation = self.get_or_create_conversation(session_id)
                     else:
-                        # For VAPI requests, create a new conversation without session
+                        # For VAPI requests without session, create a new conversation
                         conversation = Conversation()
                         db.session.add(conversation)
                         db.session.commit()
@@ -78,7 +78,7 @@ class OpenAIAssistant:
                     if not conversation:
                         raise ValueError("Failed to create or retrieve conversation")
 
-                    logger.info(f"Processing message in conversation {conversation.id}")
+                    logger.info(f"🔹 Processing message in conversation {conversation.id} with session {session_id}")
                 except Exception as e:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
@@ -87,7 +87,7 @@ class OpenAIAssistant:
                 # Create a new thread
                 try:
                     thread = self.client.beta.threads.create()
-                    logger.info(f"Created new thread {thread.id}")
+                    logger.info(f"Created new thread {thread.id} for session {session_id}")
                 except Exception as e:
                     logger.error(f"Error creating thread: {str(e)}", exc_info=True)
                     yield f"Error creating conversation thread: {str(e)}"
@@ -102,7 +102,7 @@ class OpenAIAssistant:
                     )
                     db.session.add(message)
                     db.session.commit()
-                    logger.info(f"Stored user message in conversation {conversation.id}")
+                    logger.info(f"🔹 Stored user message in conversation {conversation.id}")
                 except Exception as e:
                     logger.error(f"Error storing user message: {str(e)}", exc_info=True)
                     yield f"Error storing message: {str(e)}"
@@ -117,7 +117,7 @@ class OpenAIAssistant:
                             role=msg["role"],
                             content=msg["content"]
                         )
-                    logger.info(f"Added {len(history)} historical messages to thread")
+                    logger.info(f"🔹 Added {len(history)} historical messages to thread for session {session_id}")
                 except Exception as e:
                     logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
 

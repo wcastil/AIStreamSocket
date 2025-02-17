@@ -1,33 +1,67 @@
-
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversations</title>
+    <title>Interview Conversations</title>
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
     <style>
         .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
         .user { background-color: #2c3338; }
         .assistant { background-color: #1e2428; }
-        .conversation { margin-bottom: 30px; padding: 20px; background-color: #343a40; border-radius: 8px; }
+        .conversation { 
+            margin-bottom: 30px; 
+            padding: 20px; 
+            background-color: #343a40; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .session-id {
+            font-family: monospace;
+            padding: 4px 8px;
+            background: #2c3338;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 5px 0;
+        }
+        .timestamp {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body class="container py-4">
-    <h1>Conversations</h1>
+    <h1>Interview Conversations</h1>
+    <p class="text-muted">Displaying all recorded interview sessions and their messages.</p>
+
     {% for conv in conversations %}
         <div class="conversation">
-            <h3>Conversation #{{ conv.id }}</h3>
-            <p>Session ID: {{ conv.session_id or 'None' }}</p>
-            <p>Created: {{ conv.created_at }}</p>
-            
-            <h4>Messages:</h4>
-            {% for msg in conv.messages %}
-                <div class="message {{ msg.role }}">
-                    <strong>{{ msg.role|title }}</strong> ({{ msg.created_at }})<br>
-                    {{ msg.content }}
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3>Conversation #{{ conv.id }}</h3>
+                    <div class="session-id">
+                        Session ID: {{ conv.session_id or 'None' }}
+                    </div>
                 </div>
-            {% endfor %}
+                <span class="timestamp">
+                    Created: {{ conv.created_at }}
+                </span>
+            </div>
+
+            <div class="messages mt-4">
+                <h4>Messages:</h4>
+                {% for msg in conv.messages %}
+                    <div class="message {{ msg.role }}">
+                        <div class="d-flex justify-content-between">
+                            <strong>{{ msg.role|title }}</strong>
+                            <small class="timestamp">{{ msg.created_at }}</small>
+                        </div>
+                        <div class="mt-2">
+                            {{ msg.content }}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
         </div>
     {% endfor %}
 </body>

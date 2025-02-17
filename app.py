@@ -124,12 +124,9 @@ def vapi_chat():
                 }
             }), 400
 
-        # Extract session ID from request headers - now optional
-        session_id = request.headers.get('X-Session-ID')
-        if not session_id:
-            logger.info("No session ID provided in VAPI request, creating a new conversation")
-        else:
-            logger.info(f"Using provided session ID: {session_id}")
+        # Extract or generate session ID
+        session_id = request.headers.get('X-Session-ID', os.urandom(16).hex())
+        logger.info(f"🔹 Using session ID: {session_id}")
 
         def generate():
             # Create a new application context for the generator
@@ -137,9 +134,9 @@ def vapi_chat():
             ctx.push()
             try:
                 assistant = OpenAIAssistant()
-                logger.info(f"Processing VAPI request through assistant")
+                logger.info(f"Processing VAPI request through assistant with session {session_id}")
 
-                # Process through the assistant with optional session tracking
+                # Process through the assistant with session tracking
                 for response in assistant.stream_response(last_message, session_id=session_id):
                     # Handle string responses
                     content = response if isinstance(response, str) else response.get("content", "")
@@ -149,6 +146,7 @@ def vapi_chat():
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": "custom-assistant",
+                        "session_id": session_id,  # Include session ID in response
                         "choices": [{
                             "index": 0,
                             "delta": {
@@ -166,13 +164,14 @@ def vapi_chat():
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": "custom-assistant",
+                    "session_id": session_id,  # Include session ID in completion
                     "choices": [{
                         "index": 0,
                         "delta": {},
                         "finish_reason": "stop"
                     }]
                 }
-                logger.info("VAPI response completed successfully")
+                logger.info(f"VAPI response completed for session {session_id}")
                 yield f"data: {json.dumps(completion_data)}\n\n"
 
             except Exception as e:
@@ -181,11 +180,11 @@ def vapi_chat():
                     "error": {
                         "message": str(e),
                         "type": "api_error"
-                    }
+                    },
+                    "session_id": session_id  # Include session ID even in error response
                 })
                 yield f"data: {error_response}\n\n"
             finally:
-                # Make sure to pop the context when done
                 ctx.pop()
 
         return Response(
@@ -194,7 +193,8 @@ def vapi_chat():
             headers={
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
+                'X-Accel-Buffering': 'no',
+                'X-Session-ID': session_id  # Return session ID in response headers
             }
         )
 
@@ -204,7 +204,8 @@ def vapi_chat():
             "error": {
                 "message": str(e),
                 "type": "api_error"
-            }
+            },
+            "session_id": session_id  # Include session ID in error response
         }), 500
 
 @app.route('/stream', methods=['POST'])
