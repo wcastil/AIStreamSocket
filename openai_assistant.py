@@ -71,9 +71,8 @@ class OpenAIAssistant:
                         # Always use get_or_create_conversation when we have a session_id
                         conversation = self.get_or_create_conversation(session_id)
                     else:
-                        # Generate a new session ID if none provided
-                        session_id = os.urandom(16).hex()
-                        conversation = self.get_or_create_conversation(session_id)
+                        # If no session_id provided, this is an error as we should always have one
+                        raise ValueError("No session ID provided")
 
                     if not conversation:
                         raise ValueError("Failed to create or retrieve conversation")

@@ -252,10 +252,13 @@ def stream():
 
     data = request.get_json()
     message = data.get('message')
-    session_id = data.get('session_id')  # Optional session ID for conversation continuity
 
     if not message:
         return jsonify({"error": "Message field is required"}), 400
+
+    # Use the global session manager
+    session_id = session_manager.get_session()
+    logger.info(f"Using managed session ID for stream: {session_id}")
 
     return Response(
         stream_openai_response(message, session_id),
@@ -263,7 +266,8 @@ def stream():
         headers={
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no'
+            'X-Accel-Buffering': 'no',
+            'X-Session-ID': session_id
         }
     )
 
@@ -273,6 +277,7 @@ def stream_openai_response(message, session_id=None):
         # Initialize OpenAI Assistant within app context
         with app.app_context():
             assistant = OpenAIAssistant()
+            logger.info(f"Processing message with session ID: {session_id}")
 
             # Stream responses with proper context management
             for response in assistant.stream_response(message, session_id=session_id):
@@ -281,24 +286,26 @@ def stream_openai_response(message, session_id=None):
                     data = {
                         "type": "text",
                         "chunk": response,
-                        "done": False
+                        "done": False,
+                        "session_id": session_id
                     }
                 else:
                     # Handle potential dictionary responses
                     data = {
                         "type": response.get("type", "text"),
                         "chunk": response.get("content", ""),
-                        "done": False
+                        "done": False,
+                        "session_id": session_id
                     }
 
                 yield f"data: {json.dumps(data)}\n\n"
 
             # Send completion message
-            yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
+            yield f"data: {json.dumps({'chunk': '', 'done': True, 'session_id': session_id})}\n\n"
 
     except Exception as e:
         logger.error(f"Error in stream_openai_response: {str(e)}", exc_info=True)
-        error_data = json.dumps({"error": str(e)})
+        error_data = json.dumps({"error": str(e), "session_id": session_id})
         yield f"data: {error_data}\n\n"
 
 @app.route('/conversations', methods=['GET'])
