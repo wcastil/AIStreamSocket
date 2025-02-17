@@ -8,7 +8,7 @@ from database import db
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
-    level=logging.INFO,  # Change from DEBUG to INFO to reduce noise
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -17,6 +17,23 @@ logger = logging.getLogger(__name__)
 # Add version identifier
 SERVER_VERSION = "v2.0-2024-02-15"
 logger.info(f"Starting interview server {SERVER_VERSION}")
+
+# Global session management
+class SessionManager:
+    def __init__(self):
+        self.current_session = os.urandom(16).hex()
+        logger.info(f"Initialized SessionManager with session ID: {self.current_session}")
+
+    def get_session(self):
+        return self.current_session
+
+    def increment_session(self):
+        old_session = self.current_session
+        self.current_session = os.urandom(16).hex()
+        logger.info(f"Incremented session ID from {old_session} to {self.current_session}")
+        return self.current_session
+
+session_manager = SessionManager()
 
 try:
     # Initialize Flask
@@ -78,6 +95,25 @@ def after_request(response):
     response.headers['Access-Control-Allow-Headers'] = '*'
     return response
 
+# Add admin endpoint to control session
+@app.route('/admin/session', methods=['POST'])
+def admin_session():
+    """Admin endpoint to control session ID"""
+    action = request.args.get('action')
+
+    if action == 'increment':
+        new_session = session_manager.increment_session()
+        return jsonify({
+            "message": "Session ID incremented",
+            "old_session": session_manager.current_session,
+            "new_session": new_session
+        })
+    else:
+        return jsonify({
+            "message": "Current session ID",
+            "session": session_manager.get_session()
+        })
+
 @app.before_request
 def before_request():
     """Log incoming request details for debugging"""
@@ -124,9 +160,9 @@ def vapi_chat():
                 }
             }), 400
 
-        # Extract or generate session ID
-        session_id = request.headers.get('X-Session-ID', os.urandom(16).hex())
-        logger.info(f"🔹 Using session ID: {session_id}")
+        # Use managed session ID
+        session_id = session_manager.get_session()
+        logger.info(f"🔹 Using managed session ID: {session_id}")
 
         def generate():
             # Create a new application context for the generator
@@ -138,7 +174,6 @@ def vapi_chat():
 
                 # Process through the assistant with session tracking
                 for response in assistant.stream_response(last_message, session_id=session_id):
-                    # Handle string responses
                     content = response if isinstance(response, str) else response.get("content", "")
 
                     chunk_data = {
@@ -146,7 +181,7 @@ def vapi_chat():
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": "custom-assistant",
-                        "session_id": session_id,  # Include session ID in response
+                        "session_id": session_id,
                         "choices": [{
                             "index": 0,
                             "delta": {
@@ -164,7 +199,7 @@ def vapi_chat():
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": "custom-assistant",
-                    "session_id": session_id,  # Include session ID in completion
+                    "session_id": session_id,
                     "choices": [{
                         "index": 0,
                         "delta": {},
@@ -181,7 +216,7 @@ def vapi_chat():
                         "message": str(e),
                         "type": "api_error"
                     },
-                    "session_id": session_id  # Include session ID even in error response
+                    "session_id": session_id
                 })
                 yield f"data: {error_response}\n\n"
             finally:
@@ -194,18 +229,19 @@ def vapi_chat():
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'X-Accel-Buffering': 'no',
-                'X-Session-ID': session_id  # Return session ID in response headers
+                'X-Session-ID': session_id
             }
         )
 
     except Exception as e:
         logger.error(f"Error in VAPI endpoint: {str(e)}", exc_info=True)
+        current_session = session_manager.get_session()
         return jsonify({
             "error": {
                 "message": str(e),
                 "type": "api_error"
             },
-            "session_id": session_id  # Include session ID in error response
+            "session_id": current_session
         }), 500
 
 @app.route('/stream', methods=['POST'])
