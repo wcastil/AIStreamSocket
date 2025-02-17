@@ -269,9 +269,9 @@ def stream_openai_response(message, session_id=None):
 def view_conversations():
     """View all conversations and their messages"""
     try:
-        conversations = Conversation.query.all()
+        conversations = Conversation.query.order_by(Conversation.created_at.desc()).all()
         conversations_data = []
-        
+
         for conv in conversations:
             messages = Message.query.filter_by(conversation_id=conv.id).order_by(Message.created_at).all()
             messages_data = [{
@@ -279,14 +279,15 @@ def view_conversations():
                 'content': msg.content,
                 'created_at': msg.created_at.strftime('%Y-%m-%d %H:%M:%S')
             } for msg in messages]
-            
+
             conversations_data.append({
                 'id': conv.id,
-                'session_id': conv.session_id,
+                'session_id': conv.session_id or 'No Session ID',  # Handle None values
                 'created_at': conv.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'message_count': len(messages_data),  # Add message count
                 'messages': messages_data
             })
-            
+
         return render_template('conversations.html', conversations=conversations_data)
     except Exception as e:
         logger.error(f"Error viewing conversations: {str(e)}")

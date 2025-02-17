@@ -23,10 +23,18 @@
             border-radius: 4px;
             display: inline-block;
             margin: 5px 0;
+            color: #00ff00;  /* Make session ID more visible */
         }
         .timestamp {
             color: #6c757d;
             font-size: 0.9em;
+        }
+        .message-count {
+            background: #2c3338;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            color: #fff;
         }
     </style>
 </head>
@@ -38,9 +46,12 @@
         <div class="conversation">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <h3>Conversation #{{ conv.id }}</h3>
+                    <h3>
+                        Conversation #{{ conv.id }}
+                        <span class="message-count">{{ conv.message_count }} messages</span>
+                    </h3>
                     <div class="session-id">
-                        Session ID: {{ conv.session_id or 'None' }}
+                        Session ID: {{ conv.session_id }}
                     </div>
                 </div>
                 <span class="timestamp">

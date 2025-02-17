@@ -26,12 +26,13 @@ class OpenAIAssistant:
         try:
             with current_app.app_context():
                 if session_id:
+                    # First try to find an existing conversation with this session ID
                     conversation = Conversation.query.filter_by(session_id=session_id).first()
                     if conversation:
                         logger.info(f"Retrieved existing conversation for session {session_id}")
                         return conversation
 
-                # Create new conversation within the session
+                # Create new conversation with the session ID
                 conversation = Conversation(session_id=session_id)
                 db.session.add(conversation)
                 db.session.commit()
@@ -39,7 +40,7 @@ class OpenAIAssistant:
                 # Refresh the conversation object to ensure it's bound to the session
                 db.session.refresh(conversation)
 
-                logger.info(f"Created new conversation{' for session ' + session_id if session_id else ''}")
+                logger.info(f"Created new conversation with session ID: {session_id}")
                 return conversation
         except Exception as e:
             logger.error(f"Error in get_or_create_conversation: {str(e)}", exc_info=True)
@@ -67,18 +68,17 @@ class OpenAIAssistant:
                     if conversation_id:
                         conversation = Conversation.query.get(conversation_id)
                     elif session_id:
+                        # Always use get_or_create_conversation when we have a session_id
                         conversation = self.get_or_create_conversation(session_id)
                     else:
-                        # For VAPI requests without session, create a new conversation
-                        conversation = Conversation()
-                        db.session.add(conversation)
-                        db.session.commit()
-                        db.session.refresh(conversation)
+                        # Generate a new session ID if none provided
+                        session_id = os.urandom(16).hex()
+                        conversation = self.get_or_create_conversation(session_id)
 
                     if not conversation:
                         raise ValueError("Failed to create or retrieve conversation")
 
-                    logger.info(f"🔹 Processing message in conversation {conversation.id} with session {session_id}")
+                    logger.info(f"🔹 Processing message in conversation {conversation.id} with session {conversation.session_id}")
                 except Exception as e:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
