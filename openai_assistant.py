@@ -151,13 +151,23 @@ class OpenAIAssistant:
                 # Poll for response and stream it
                 max_retries = 3
                 retry_count = 0
+                max_poll_duration = 30  # Maximum polling duration in seconds
+                poll_interval = 1.0     # Initial polling interval
+                start_time = time.time()
 
                 while True:
                     try:
+                        current_time = time.time()
+                        if current_time - start_time > max_poll_duration:
+                            logger.warning(f"Polling timeout after {max_poll_duration} seconds")
+                            yield "Response timeout exceeded"
+                            break
+
                         run_status = self.client.beta.threads.runs.retrieve(
                             thread_id=thread.id,
                             run_id=run.id
                         )
+                        logger.debug(f"Run status check: {run_status.status}")
 
                         if run_status.status == 'completed':
                             messages = self.client.beta.threads.messages.list(
@@ -195,7 +205,9 @@ class OpenAIAssistant:
                             yield error_msg
                             break
 
-                        time.sleep(0.5)
+                        # Exponential backoff for polling interval
+                        poll_interval = min(poll_interval * 1.5, 3.0)  # Cap at 3 seconds
+                        time.sleep(poll_interval)
 
                     except Exception as e:
                         logger.error(f"Error checking run status: {str(e)}", exc_info=True)
