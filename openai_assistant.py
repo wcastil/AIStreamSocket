@@ -111,7 +111,9 @@ class OpenAIAssistant:
                 # Get conversation history and add to thread
                 try:
                     history = self.get_conversation_history(conversation.id)
+                    logger.info(f"🔹 Loading conversation history ({len(history)} messages) into thread {thread.id}")
                     for msg in history:
+                        logger.debug(f"Adding message to thread - Role: {msg['role']}, Content: {msg['content'][:100]}...")
                         self.client.beta.threads.messages.create(
                             thread_id=thread.id,
                             role=msg["role"],
