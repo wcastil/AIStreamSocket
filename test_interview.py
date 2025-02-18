@@ -5,6 +5,7 @@ from models import Conversation, Message, PersonModel
 from openai_assistant import OpenAIAssistant
 from session_evaluator import SessionEvaluator
 import json
+import sys
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -84,6 +85,17 @@ class InterviewTester:
                     logger.info(f"- Missing topics count: {len(person_model.missing_topics)}")
                     logger.info(f"- Follow-up questions count: {len(person_model.follow_up_questions)}")
                     logger.info(f"- Data model size: {len(str(person_model.data_model))} chars")
+
+                # Write test results to a file for reference
+                with open(f'test_results_{test_session_id}.json', 'w') as f:
+                    json.dump({
+                        'test_session_id': test_session_id,
+                        'conversation_id': conversation.id,
+                        'person_model_id': person_model.id,
+                        'follow_up_questions': person_model.follow_up_questions,
+                        'missing_topics': person_model.missing_topics,
+                    }, f, indent=2)
+                logger.info(f"✅ Test results saved to test_results_{test_session_id}.json")
             else:
                 logger.error(f"Evaluation failed: {evaluation_result['error']}")
 
@@ -174,8 +186,21 @@ class InterviewTester:
             logger.error(f"Error in no-followup scenario: {str(e)}", exc_info=True)
             raise
 
-def run_test():
-    """Run the complete interview test"""
+def run_first_pass_only():
+    """Run only the first interview pass test"""
+    try:
+        logger.info("🚀 Running first-pass interview test only")
+        tester = InterviewTester()
+        test_session = tester.replay_first_interview()
+        logger.info(f"✅ First pass completed successfully. Test session ID: {test_session}")
+        logger.info(f"Results saved to test_results_{test_session}.json")
+        return test_session
+    except Exception as e:
+        logger.error(f"❌ Test failed: {str(e)}", exc_info=True)
+        return None
+
+def run_full_test():
+    """Run the complete interview test suite"""
     try:
         tester = InterviewTester()
 
@@ -199,4 +224,8 @@ def run_test():
 
 if __name__ == "__main__":
     with app.app_context():
-        run_test()
+        # Check if first-pass only flag is provided
+        if len(sys.argv) > 1 and sys.argv[1] == "--first-pass":
+            run_first_pass_only()
+        else:
+            run_full_test()

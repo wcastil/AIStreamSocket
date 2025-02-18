@@ -1,0 +1,31 @@
+{
+  "test_session_id": "test_42e6eee2",
+  "conversation_id": 47,
+  "person_model_id": 10,
+  "follow_up_questions": [
+    {
+      "priority": 1,
+      "question": "Can you give me an example of a tough decision you had to make recently? How did you weigh the analytical aspects against your gut feelings?"
+    },
+    {
+      "priority": 2,
+      "question": "When faced with a significant change, either personally or professionally, what is your initial reaction, and how do you adapt to that change?"
+    },
+    {
+      "priority": 3,
+      "question": "Thinking about a time you had to make a decision without all the information you needed, how did you proceed, and what was the outcome?"
+    },
+    {
+      "priority": 4,
+      "question": "How do you balance intuition and data in your daily life? Can you share a specific situation where this balance was critical to success?"
+    },
+    {
+      "priority": 5,
+      "question": "Could you tell me about a moment where you had to step out of your comfort zone to learn something new? What motivated you, and what did you learn about yourself?"
+    }
+  ],
+  "missing_topics": [
+    "decision_making_framework.attributes.analytical_intuitive_balance",
+    "growth_and_learning.attributes.openness_to_change"
+  ]
+}

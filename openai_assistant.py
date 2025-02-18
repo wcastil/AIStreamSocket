@@ -6,6 +6,7 @@ from models import InterviewData, Message, Conversation, PersonModel
 from database import db
 import time
 from flask import current_app
+from session_evaluator import SessionEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -14,12 +15,39 @@ class OpenAIAssistant:
         try:
             self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
             self.assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
+            self.evaluator = SessionEvaluator()
 
             if not self.assistant_id:
                 raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {str(e)}", exc_info=True)
             raise
+
+    def detect_evaluation_trigger(self, message):
+        """Check if user message requests evaluation"""
+        trigger_phrases = [
+            "evaluate interview",
+            "run evaluation",
+            "analyze responses",
+            "check my answers",
+            "evaluate session",
+            "assess interview"
+        ]
+        message_lower = message.lower()
+        return any(phrase in message_lower for phrase in trigger_phrases)
+
+    def detect_second_pass_trigger(self, message):
+        """Check if user message indicates starting second pass"""
+        trigger_phrases = [
+            "continue interview",
+            "follow up questions",
+            "next questions",
+            "continue with questions",
+            "proceed with interview",
+            "ask follow up"
+        ]
+        message_lower = message.lower()
+        return any(phrase in message_lower for phrase in trigger_phrases)
 
     def get_or_create_conversation(self, session_id=None):
         """Get existing conversation or create a new one"""
@@ -81,6 +109,27 @@ class OpenAIAssistant:
             logger.error(f"Error checking interview pass: {str(e)}")
             return False
 
+    def handle_evaluation_trigger(self, conversation_id, session_id):
+        """Process evaluation request and generate follow-up questions"""
+        try:
+            logger.info(f"🔍 Running evaluation for session {session_id}")
+            result = self.evaluator.analyze_conversation(session_id)
+
+            if result['success']:
+                questions_count = len(result['follow_up_questions'])
+                topics_count = len(result['missing_topics'])
+                logger.info(f"✅ Evaluation successful - Generated {questions_count} follow-up questions for {topics_count} topics")
+                return (f"I've analyzed our conversation and identified {topics_count} areas to explore further. "
+                       f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
+                       "just let me know and we'll address these areas in detail.")
+            else:
+                logger.error(f"❌ Evaluation failed: {result['error']}")
+                return "I apologize, but I encountered an error while evaluating our conversation. Would you like to continue with the standard interview format?"
+
+        except Exception as e:
+            logger.error(f"Error in handle_evaluation_trigger: {str(e)}", exc_info=True)
+            return "I encountered an error while trying to evaluate our conversation. Would you like to continue with the standard interview format?"
+
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
         try:
@@ -103,10 +152,16 @@ class OpenAIAssistant:
                     yield f"Error managing conversation: {str(e)}"
                     return
 
-                # Check if this is a second pass and get follow-up questions
+                # Check for evaluation trigger
+                if self.detect_evaluation_trigger(user_message):
+                    evaluation_response = self.handle_evaluation_trigger(conversation.id, conversation.session_id)
+                    yield evaluation_response
+                    return
+
+                # Check for second pass trigger and get follow-up questions
                 is_second = self.is_second_pass(conversation.id)
                 follow_up_questions = None
-                if is_second:
+                if is_second and self.detect_second_pass_trigger(user_message):
                     follow_up_questions = self.get_follow_up_questions(conversation.id)
                     if follow_up_questions:
                         logger.info("Using follow-up questions for second pass interview")
@@ -140,7 +195,7 @@ class OpenAIAssistant:
                     history = self.get_conversation_history(conversation.id)
                     logger.info(f"🔹 Loading conversation history ({len(history)} messages) into thread {thread.id}")
 
-                    # Format instructions as a user message instead of system message
+                    # Format instructions based on conversation state
                     if is_second and follow_up_questions:
                         instructions = f"""[INSTRUCTIONS]
 This is a follow-up interview session. Focus on asking these specific questions to gather missing information:
