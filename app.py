@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify, Response, current_ap
 from flask_cors import CORS
 import json
 from database import db
+from session_evaluator import SessionEvaluator
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -335,6 +336,36 @@ def view_conversations():
     except Exception as e:
         logger.error(f"Error viewing conversations: {str(e)}")
         return str(e), 500
+
+@app.route('/api/evaluate-session/<session_id>', methods=['POST'])
+def evaluate_session(session_id):
+    """Trigger post-session evaluation for a specific session"""
+    try:
+        evaluator = SessionEvaluator()
+        result = evaluator.analyze_conversation(session_id)
+
+        if result['success']:
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "model": result['model'],
+                    "missing_topics": result['missing_topics'],
+                    "follow_up_questions": result['follow_up_questions']
+                }
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result['error']
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error in evaluate_session: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 @app.errorhandler(404)
 def not_found_error(error):

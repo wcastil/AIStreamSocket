@@ -10,6 +10,7 @@ class Conversation(db.Model):
     messages = db.relationship('Message', backref='conversation', lazy=True, cascade='all, delete-orphan')
     interview_data = db.relationship('InterviewData', backref='conversation', uselist=False, cascade='all, delete-orphan')
     session_id = db.Column(db.String(100), unique=True)  # Added for session tracking
+    person_model = db.relationship('PersonModel', backref='conversation', uselist=False, cascade='all, delete-orphan')
 
 class Message(db.Model):
     __tablename__ = 'messages'
@@ -66,3 +67,15 @@ class InterviewData(db.Model):
 
     # Missing fields tracking
     missing_fields = db.Column(db.JSON, default=list)
+
+class PersonModel(db.Model):
+    """Stores structured person model data extracted from interviews"""
+    __tablename__ = 'person_models'
+
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    data_model = db.Column(db.JSON, nullable=False)  # Stores structured person model
+    missing_topics = db.Column(db.JSON, default=list)  # Stores identified missing details
+    follow_up_questions = db.Column(db.JSON, default=list)  # Suggested follow-ups
