@@ -30,6 +30,10 @@ class SessionEvaluator:
         try:
             logger.info(f"Starting interim conversation analysis for session {session_id}")
 
+            # Ensure we're in an app context
+            if not current_app:
+                raise RuntimeError("This function must be called within an application context")
+
             # Find conversation by session_id
             conversation = Conversation.query.filter_by(session_id=session_id).first()
             if not conversation:

@@ -204,18 +204,19 @@ def vapi_chat():
 
                     # Schedule evaluation to run after stream is closed
                     def run_evaluation():
-                        try:
-                            logger.info(f"Running evaluation for completed session {session_id}")
-                            evaluator = SessionEvaluator()
-                            result = evaluator.analyze_conversation(session_id)
-                            if result['success']:
-                                logger.info(f"Successfully evaluated session {session_id}")
-                            else:
-                                logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
-                        except Exception as e:
-                            logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
+                        with app.app_context():
+                            try:
+                                logger.info(f"Running evaluation for completed session {session_id}")
+                                evaluator = SessionEvaluator()
+                                result = evaluator.analyze_conversation(session_id)
+                                if result['success']:
+                                    logger.info(f"Successfully evaluated session {session_id}")
+                                else:
+                                    logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                            except Exception as e:
+                                logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
 
-                    # Use gevent to run evaluation after response
+                    # Use gevent to run evaluation after response with proper context
                     from gevent import spawn
                     spawn(run_evaluation)
 
