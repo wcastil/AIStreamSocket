@@ -126,26 +126,7 @@ class OpenAIAssistant:
         try:
             logger.info(f"🔍 Running evaluation for session {session_id}")
 
-            # First check if we already have evaluation results
-            with current_app.app_context():
-                person_model = PersonModel.query.filter_by(conversation_id=conversation_id).first()
-                if person_model:
-                    questions_count = len(person_model.follow_up_questions)
-                    topics_count = len(person_model.missing_topics)
-                    logger.info(f"✅ Found existing evaluation with {questions_count} follow-up questions for {topics_count} topics")
-
-                    # Mark first pass as completed since evaluation exists
-                    conversation = Conversation.query.get(conversation_id)
-                    if conversation and not conversation.first_pass_completed:
-                        conversation.first_pass_completed = True
-                        db.session.commit()
-                        logger.info(f"Marked first pass as completed for conversation {conversation_id}")
-
-                    return (f"I've previously analyzed our conversation and identified {topics_count} areas to explore further. "
-                           f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
-                           "just let me know and we'll address these areas in detail.")
-
-            # If no existing evaluation, run a new one
+            # Run new evaluation
             result = self.evaluator.analyze_conversation(session_id)
 
             if result['success']:
@@ -160,9 +141,18 @@ class OpenAIAssistant:
                     db.session.commit()
                     logger.info(f"Marked first pass as completed for conversation {conversation_id}")
 
-                return (f"I've analyzed our conversation and identified {topics_count} areas to explore further. "
-                       f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
-                       "just let me know and we'll address these areas in detail.")
+                # Format question scores for display
+                scored_questions = [
+                    f"({q['score']}/10) {q['question']}"
+                    for q in result['follow_up_questions']
+                ]
+
+                return (
+                    f"I've analyzed our conversation and identified {topics_count} areas to explore further. "
+                    f"I've prepared {questions_count} follow-up questions, scored by relevance (1-10):\n\n"
+                    + "\n".join(scored_questions)
+                    + "\n\nWhen you're ready to continue with the second pass, just say 'start second interview'."
+                )
             else:
                 logger.error(f"❌ Evaluation failed: {result['error']}")
                 return "I apologize, but I encountered an error while evaluating our conversation. Would you like to continue with the standard interview format?"
