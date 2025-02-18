@@ -55,15 +55,15 @@ try:
 
     # Initialize database with proper configuration
     init_db(app)
+    logger.info("Database connection initialized")
 
     # Import models after db initialization to avoid circular imports
     from models import Conversation, Message, InterviewData, PersonModel
 
-    # Create all tables within app context
+    # Create all tables within app context - only if they don't exist
     with app.app_context():
-        logger.info("Creating database tables...")
         db.create_all()
-        logger.info("Database tables created successfully")
+        logger.info("Database tables verified")
 
     # Import assistant after db and model initialization
     from openai_assistant import OpenAIAssistant
@@ -72,6 +72,19 @@ try:
 except Exception as e:
     logger.error(f"Error initializing Flask application: {str(e)}", exc_info=True)
     raise
+
+# Add shutdown handler
+def shutdown_handler(exception=None):
+    logger.info("Application shutdown initiated")
+    try:
+        # Cleanup database connections
+        db.session.remove()
+        logger.info("Database connections cleaned up")
+    except Exception as e:
+        logger.error(f"Error during shutdown cleanup: {str(e)}", exc_info=True)
+
+# Register shutdown handler
+app.teardown_appcontext(shutdown_handler)
 
 @app.after_request
 def after_request(response):
