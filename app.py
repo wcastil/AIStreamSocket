@@ -191,26 +191,18 @@ def vapi_chat():
                     yield f"data: {json.dumps(chunk_data)}\n\n"
 
                 if not completion_sent:
-                    # Before sending completion, trigger evaluation
+                    # Run evaluation at VAPI session end
                     try:
+                        # This is a true session end, trigger evaluation
+                        logger.info(f"VAPI session ended for {session_id}, running evaluation")
                         evaluator = SessionEvaluator()
-                        full_response = "".join(response_chunks)
-
-                        # Check if this seems like a natural conversation end
-                        if any(phrase in full_response.lower() for phrase in [
-                            "thank you for sharing",
-                            "is there anything else",
-                            "would you like to share more",
-                            "feel free to add"
-                        ]):
-                            logger.info(f"Natural conversation pause detected for session {session_id}, running evaluation")
-                            result = evaluator.analyze_conversation(session_id)
-                            if result['success']:
-                                logger.info(f"Successfully evaluated session {session_id}")
-                            else:
-                                logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                        result = evaluator.analyze_conversation(session_id)
+                        if result['success']:
+                            logger.info(f"Successfully evaluated session {session_id}")
+                        else:
+                            logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
                     except Exception as e:
-                        logger.error(f"Error during automatic evaluation: {str(e)}", exc_info=True)
+                        logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
 
                     # Send the completion message
                     completion_data = {
