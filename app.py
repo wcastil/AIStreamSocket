@@ -165,13 +165,9 @@ def vapi_chat():
                 assistant = OpenAIAssistant()
                 logger.info(f"Processing VAPI request through assistant with session {session_id}")
 
-                completion_sent = False
-                response_chunks = []
-
                 # Process through the assistant with session tracking
                 for response in assistant.stream_response(last_message, session_id=session_id):
                     content = response if isinstance(response, str) else response.get("content", "")
-                    response_chunks.append(content)
 
                     chunk_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
@@ -190,36 +186,33 @@ def vapi_chat():
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
 
-                if not completion_sent:
-                    # Run evaluation at VAPI session end
-                    try:
-                        # This is a true session end, trigger evaluation
-                        logger.info(f"VAPI session ended for {session_id}, running evaluation")
-                        evaluator = SessionEvaluator()
-                        result = evaluator.analyze_conversation(session_id)
-                        if result['success']:
-                            logger.info(f"Successfully evaluated session {session_id}")
-                        else:
-                            logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
-                    except Exception as e:
-                        logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
+                # Run evaluation after the response stream is complete
+                try:
+                    logger.info(f"VAPI session ended for {session_id}, running evaluation")
+                    evaluator = SessionEvaluator()
+                    result = evaluator.analyze_conversation(session_id)
+                    if result['success']:
+                        logger.info(f"Successfully evaluated session {session_id}")
+                    else:
+                        logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                except Exception as e:
+                    logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
 
-                    # Send the completion message
-                    completion_data = {
-                        "id": f"chatcmpl-{os.urandom(12).hex()}",
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": "custom-assistant",
-                        "session_id": session_id,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {},
-                            "finish_reason": "stop"
-                        }]
-                    }
-                    logger.info(f"VAPI response completed for session {session_id}")
-                    completion_sent = True
-                    yield f"data: {json.dumps(completion_data)}\n\n"
+                # Always send completion message, even if evaluation fails
+                completion_data = {
+                    "id": f"chatcmpl-{os.urandom(12).hex()}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": "custom-assistant",
+                    "session_id": session_id,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
+                }
+                logger.info(f"VAPI response completed for session {session_id}")
+                yield f"data: {json.dumps(completion_data)}\n\n"
 
             except Exception as e:
                 logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
