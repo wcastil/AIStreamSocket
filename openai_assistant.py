@@ -7,6 +7,7 @@ from models import Message, Conversation, PersonModel
 from database import db
 import time
 from session_evaluator import SessionEvaluator
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,9 @@ class OpenAIAssistant:
             self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
             self.assistant_id = os.environ.get("OPENAI_ASSISTANT_ID")
             self.evaluator = SessionEvaluator()
+            self._thread_cache = {}  # Session ID to Thread ID mapping
+            self._cache_lock = Lock()  # Thread safety for cache operations
+            self._message_batch_size = 10  # Number of messages to include in context
 
             if not self.assistant_id:
                 raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
@@ -196,99 +200,65 @@ class OpenAIAssistant:
         return any(phrase in message.lower() for phrase in trigger_phrases)
 
 
+    def _get_or_create_thread(self, session_id):
+        """Get existing thread or create new one with thread safety"""
+        with self._cache_lock:
+            if session_id in self._thread_cache:
+                try:
+                    # Verify thread still exists
+                    self.client.beta.threads.retrieve(self._thread_cache[session_id])
+                    return self._thread_cache[session_id]
+                except Exception:
+                    logger.info(f"Thread expired for session {session_id}, creating new")
+                    pass
+
+            thread = self.client.beta.threads.create()
+            self._thread_cache[session_id] = thread.id
+            return thread.id
+
+    def _load_recent_messages(self, conversation_id, limit=10):
+        """Load only the most recent messages for context"""
+        with current_app.app_context():
+            messages = Message.query.filter_by(conversation_id=conversation_id)\
+                .order_by(Message.created_at.desc())\
+                .limit(limit)\
+                .all()
+            return [{
+                "role": msg.role,
+                "content": msg.content
+            } for msg in reversed(messages)]  # Reverse to get chronological order
+
     def stream_response(self, user_message, session_id=None, conversation_id=None):
-        """Stream responses from the OpenAI Assistant API with conversation tracking"""
+        """Optimized streaming response handler"""
         try:
             with current_app.app_context():
-                try:
-                    if conversation_id:
-                        conversation = Conversation.query.get(conversation_id)
-                        db.session.add(conversation)
-                    elif session_id:
-                        conversation = self.get_or_create_conversation(session_id)
-                    else:
-                        raise ValueError("No session ID provided")
-
+                # Get or create conversation with reduced DB operations
+                conversation = None
+                if conversation_id:
+                    conversation = Conversation.query.get(conversation_id)
+                elif session_id:
+                    conversation = Conversation.query.filter_by(session_id=session_id).first()
                     if not conversation:
-                        raise ValueError("Failed to create or retrieve conversation")
+                        conversation = Conversation(session_id=session_id)
+                        db.session.add(conversation)
+                        db.session.commit()
+                else:
+                    raise ValueError("No session ID provided")
 
-                    person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
-                    if person_model and conversation.first_pass_completed:
-                        if "continue" in user_message.lower() or "let's begin" in user_message.lower():
-                            transition_message = self.handle_second_pass_transition(conversation.id)
-                            yield transition_message
-                            return
+                # Quick checks for special commands
+                if any(trigger in user_message.lower() for trigger in 
+                      ["evaluate interview", "start second interview", "mark interview complete"]):
+                    if "evaluate" in user_message.lower():
+                        return self.handle_evaluation_trigger(conversation.id, conversation.session_id)
+                    elif "start second" in user_message.lower():
+                        return self.handle_second_pass_transition(conversation.id)
+                    else:
+                        return self.handle_completion_trigger(conversation.id)
 
-                except Exception as e:
-                    logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
-                    yield f"Error managing conversation: {str(e)}"
-                    return
+                # Get or create thread for session
+                thread_id = self._get_or_create_thread(session_id)
 
-                if self.detect_completion_trigger(user_message):
-                    completion_response = self.handle_completion_trigger(conversation.id)
-                    yield completion_response
-                    return
-
-                if self.detect_evaluation_trigger(user_message):
-                    evaluation_response = self.handle_evaluation_trigger(conversation.id, conversation.session_id)
-                    yield evaluation_response
-                    return
-
-                if self.detect_second_pass_trigger(user_message):
-                    transition_message = self.handle_second_pass_transition(conversation.id)
-                    yield transition_message
-                    return
-
-                if conversation.current_pass == 2:
-                    # Check if user wants to end the interview
-                    if self.detect_end_interview_trigger(user_message):
-                        yield "Thank you for your time and detailed responses. This concludes our interview. Your insights have been very valuable."
-                        return
-
-                    message = Message(
-                        conversation_id=conversation.id,
-                        role='user',
-                        content=user_message
-                    )
-                    db.session.add(message)
-                    db.session.commit()
-
-                    should_probe_deeper = any(trigger in user_message.lower() for trigger in [
-                        'because', 'when', 'after', 'during', 'while',
-                        'situation', 'experience', 'example', 'instance',
-                        'happened', 'occurred', 'felt', 'thought'
-                    ])
-
-                    if should_probe_deeper:
-                        try:
-                            follow_up = self.client.chat.completions.create(
-                                model="gpt-4",
-                                messages=[
-                                    {"role": "system", "content": "Generate a natural follow-up question to learn more specific details about the user's response. Focus on understanding the context, emotions, and specific examples they mentioned."},
-                                    {"role": "user", "content": user_message}
-                                ]
-                            )
-                            probe_question = follow_up.choices[0].message.content
-
-                            probe_message = Message(
-                                conversation_id=conversation.id,
-                                role='assistant',
-                                content=probe_question
-                            )
-                            db.session.add(probe_message)
-                            db.session.commit()
-
-                            yield probe_question
-                            return
-                        except Exception as e:
-                            logger.error(f"Error generating follow-up probe: {str(e)}")
-
-                    next_question = self.get_next_follow_up_question(conversation.id)
-                    if next_question:
-                        yield next_question
-                        return
-
-                thread = self.client.beta.threads.create()
+                # Add message to database
                 message = Message(
                     conversation_id=conversation.id,
                     role='user',
@@ -297,94 +267,73 @@ class OpenAIAssistant:
                 db.session.add(message)
                 db.session.commit()
 
-                history = self.get_conversation_history(conversation.id)
-                instructions = "[INSTRUCTIONS]\nConduct the initial structured interview following the standard protocol.\n[/INSTRUCTIONS]"
+                # Load recent message history
+                recent_messages = self._load_recent_messages(conversation.id, self._message_batch_size)
 
-                self.client.beta.threads.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content=instructions
-                )
-
-                for msg in history:
+                # Add messages to thread efficiently
+                for msg in recent_messages[-self._message_batch_size:]:  # Only latest messages
                     self.client.beta.threads.messages.create(
-                        thread_id=thread.id,
+                        thread_id=thread_id,
                         role=msg["role"],
                         content=msg["content"]
                     )
 
-                self.client.beta.threads.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content=user_message
-                )
-
+                # Create and monitor run with optimized polling
                 run = self.client.beta.threads.runs.create(
-                    thread_id=thread.id,
+                    thread_id=thread_id,
                     assistant_id=self.assistant_id
                 )
 
-                max_retries = 3
-                retry_count = 0
-                max_poll_duration = 30
-                poll_interval = 1.0
-                start_time = time.time()
+                poll_interval = 0.5
+                max_polls = 60
+                polls = 0
 
-                while True:
+                while polls < max_polls:
                     try:
-                        if time.time() - start_time > max_poll_duration:
-                            yield "Response timeout exceeded"
-                            break
-
                         run_status = self.client.beta.threads.runs.retrieve(
-                            thread_id=thread.id,
+                            thread_id=thread_id,
                             run_id=run.id
                         )
 
                         if run_status.status == 'completed':
                             messages = self.client.beta.threads.messages.list(
-                                thread_id=thread.id
+                                thread_id=thread_id,
+                                limit=1  # Only get latest message
                             )
 
                             for msg in messages.data:
                                 if msg.role == "assistant":
-                                    try:
-                                        content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
-                                        assistant_message = Message(
-                                            conversation_id=conversation.id,
-                                            role='assistant',
-                                            content=content
-                                        )
-                                        db.session.add(assistant_message)
-                                        db.session.commit()
-                                        yield content
-                                    except Exception as e:
-                                        error_msg = f"Error processing message: {str(e)}"
-                                        logger.error(error_msg, exc_info=True)
-                                        yield error_msg
-                                    break
-                            break
+                                    content = msg.content[0].text.value if hasattr(msg.content[0], 'text') else str(msg.content[0])
+
+                                    # Store response in database
+                                    assistant_message = Message(
+                                        conversation_id=conversation.id,
+                                        role='assistant',
+                                        content=content
+                                    )
+                                    db.session.add(assistant_message)
+                                    db.session.commit()
+
+                                    yield content
+                                    return
 
                         elif run_status.status in ['failed', 'cancelled', 'expired']:
                             error_msg = f"Assistant run failed with status: {run_status.status}"
                             logger.error(error_msg)
                             yield error_msg
-                            break
+                            return
 
-                        poll_interval = min(poll_interval * 1.5, 3.0)
                         time.sleep(poll_interval)
+                        polls += 1
+                        poll_interval = min(poll_interval * 1.5, 2.0)  # Progressive backoff
 
                     except Exception as e:
-                        logger.error(f"Error checking run status: {str(e)}", exc_info=True)
-                        retry_count += 1
+                        logger.error(f"Error in run status check: {str(e)}", exc_info=True)
+                        yield f"Error processing response: {str(e)}"
+                        return
 
-                        if retry_count >= max_retries:
-                            error_msg = f"Max retries reached, failed to get response: {str(e)}"
-                            logger.error(error_msg)
-                            yield error_msg
-                            break
-
-                        time.sleep(1)
+                yield "Response timeout exceeded"
+                return
 
         except Exception as e:
             error_msg = f"Error in OpenAI Assistant: {str(e)}"
