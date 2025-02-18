@@ -79,3 +79,4 @@ class PersonModel(db.Model):
     data_model = db.Column(db.JSON, nullable=False)  # Stores structured person model
     missing_topics = db.Column(db.JSON, default=list)  # Stores identified missing details
     follow_up_questions = db.Column(db.JSON, default=list)  # Suggested follow-ups
+    debug_info = db.Column(db.JSON, default=dict)  # Stores debug information

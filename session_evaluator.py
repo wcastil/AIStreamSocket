@@ -101,12 +101,14 @@ class SessionEvaluator:
                 person_model.data_model = structured_data
                 person_model.missing_topics = missing_topics
                 person_model.follow_up_questions = follow_up_questions
+                person_model.debug_info = debug_info
             else:
                 person_model = PersonModel(
                     conversation_id=conversation.id,
                     data_model=structured_data,
                     missing_topics=missing_topics,
-                    follow_up_questions=follow_up_questions
+                    follow_up_questions=follow_up_questions,
+                    debug_info=debug_info
                 )
                 db.session.add(person_model)
 

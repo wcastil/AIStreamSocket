@@ -381,20 +381,13 @@ def view_evaluation_results(session_id):
         if not person_model:
             return "No evaluation data found for this session", 404
 
-        # Get evaluation results with debug info
-        evaluator = SessionEvaluator()
-        result = evaluator.analyze_conversation(session_id)
-
-        if not result['success']:
-            return f"Error retrieving evaluation data: {result.get('error')}", 500
-
         return render_template('evaluation_results.html',
                              session_id=session_id,
                              evaluation_time=person_model.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                              person_model=person_model.data_model,
                              missing_topics=person_model.missing_topics,
                              follow_up_questions=person_model.follow_up_questions,
-                             debug_info=result.get('debug_info', {}))
+                             debug_info=person_model.debug_info or {})
 
     except Exception as e:
         logger.error(f"Error viewing evaluation results: {str(e)}")
