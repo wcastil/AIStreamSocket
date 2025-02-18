@@ -34,7 +34,10 @@ class OpenAIAssistant:
             "assess interview"
         ]
         message_lower = message.lower()
-        return any(phrase in message_lower for phrase in trigger_phrases)
+        triggered = any(phrase in message_lower for phrase in trigger_phrases)
+        if triggered:
+            logger.info(f"Evaluation trigger detected in message: {message}")
+        return triggered
 
     def detect_second_pass_trigger(self, message):
         """Check if user message indicates starting second pass"""
@@ -154,7 +157,23 @@ class OpenAIAssistant:
 
                 # Check for evaluation trigger
                 if self.detect_evaluation_trigger(user_message):
+                    logger.info("Evaluation trigger detected, running evaluation...")
                     evaluation_response = self.handle_evaluation_trigger(conversation.id, conversation.session_id)
+                    logger.info(f"Evaluation response: {evaluation_response[:100]}...")
+
+                    # Store evaluation trigger response
+                    try:
+                        evaluation_message = Message(
+                            conversation_id=conversation.id,
+                            role='assistant',
+                            content=evaluation_response
+                        )
+                        db.session.add(evaluation_message)
+                        db.session.commit()
+                        logger.info("Stored evaluation response in database")
+                    except Exception as e:
+                        logger.error(f"Error storing evaluation response: {str(e)}")
+
                     yield evaluation_response
                     return
 
