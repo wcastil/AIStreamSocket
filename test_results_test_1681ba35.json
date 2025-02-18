@@ -1,0 +1,18 @@
+{
+  "test_session_id": "test_1681ba35",
+  "conversation_id": 59,
+  "person_model_id": 21,
+  "follow_up_questions": [
+    "Can you give an example of a decision you made that illustrates how you balance analytical and intuitive approaches?",
+    "How do you typically reconcile situations when your analytical assessments and intuitive feelings about a decision conflict?",
+    "Could you share a recent scenario where you had to adjust or change your approach to a problem or project? What prompted the change and how did you adapt?",
+    "In terms of personal or professional growth, can you describe a time when you actively sought out something new to learn because it was outside of your comfort zone or expertise area? How did you go about learning it?",
+    "How do you stay informed about new tools, techniques, or theories in your field? Can you discuss how this has recently influenced your approach to your work or a specific project?",
+    "Reflecting on a past project, can you talk about a moment where you had to pivot or change strategy significantly? How did you assess that need and what was the learning outcome from that experience?",
+    "When faced with a major change, either in work or personal projects, how do you assess the impact and plan your approach? Could you walk us through a specific example?"
+  ],
+  "missing_topics": [
+    "decision_making_framework.attributes.analytical_intuitive_balance",
+    "growth_and_learning.attributes.openness_to_change"
+  ]
+}

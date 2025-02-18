@@ -42,15 +42,18 @@ class OpenAIAssistant:
     def detect_second_pass_trigger(self, message):
         """Check if user message indicates starting second pass"""
         trigger_phrases = [
-            "continue interview",
-            "follow up questions",
-            "next questions",
-            "continue with questions",
-            "proceed with interview",
-            "ask follow up"
+            "start second interview",
+            "begin second pass",
+            "start follow-up interview",
+            "begin second interview phase",
+            "proceed with second interview",
+            "start second phase questions"
         ]
         message_lower = message.lower()
-        return any(phrase in message_lower for phrase in trigger_phrases)
+        triggered = any(phrase in message_lower for phrase in trigger_phrases)
+        if triggered:
+            logger.info(f"Second pass trigger detected in message: {message}")
+        return triggered
 
     def get_or_create_conversation(self, session_id=None):
         """Get existing conversation or create a new one"""
@@ -104,10 +107,16 @@ class OpenAIAssistant:
             return None
 
     def is_second_pass(self, conversation_id):
-        """Determine if this is a second-pass interview based on message history"""
+        """Determine if this is a second-pass interview based on evaluation status"""
         try:
-            messages = Message.query.filter_by(conversation_id=conversation_id).count()
-            return messages > 0  # If there are previous messages, consider it a second pass
+            conversation = Conversation.query.get(conversation_id)
+            if not conversation:
+                return False
+
+            # Check if first pass is completed and has evaluation results
+            return (conversation.first_pass_completed and 
+                    conversation.person_model is not None and 
+                    conversation.current_pass > 1)
         except Exception as e:
             logger.error(f"Error checking interview pass: {str(e)}")
             return False
@@ -145,6 +154,47 @@ class OpenAIAssistant:
         except Exception as e:
             logger.error(f"Error in handle_evaluation_trigger: {str(e)}", exc_info=True)
             return "I encountered an error while trying to evaluate our conversation. Would you like to continue with the standard interview format?"
+
+    def handle_second_pass_transition(self, conversation_id):
+        """Handle the transition to second pass interview"""
+        try:
+            conversation = Conversation.query.get(conversation_id)
+            if not conversation:
+                return "Unable to find the conversation."
+
+            # Verify first pass completion and evaluation
+            if not conversation.first_pass_completed:
+                return ("The first interview pass needs to be completed and evaluated "
+                       "before we can proceed with follow-up questions. Would you like "
+                       "to complete the current interview first?")
+
+            person_model = conversation.person_model
+            if not person_model or not person_model.follow_up_questions:
+                return ("I don't have any follow-up questions prepared yet. "
+                       "Let's evaluate your responses first by saying 'evaluate interview'.")
+
+            # Update pass tracking
+            conversation.current_pass = 2
+            db.session.commit()
+
+            # Format transition message with question preview
+            questions_preview = person_model.follow_up_questions[:2]
+            message = (
+                "Great! Let's proceed with the follow-up questions. "
+                f"I have {len(person_model.follow_up_questions)} questions prepared. "
+                "Here's what we'll be exploring:\n\n"
+            )
+            if questions_preview:
+                message += "\n".join(f"• {q}" for q in questions_preview)
+                if len(person_model.follow_up_questions) > 2:
+                    message += "\n\n...and more."
+
+            return message
+
+        except Exception as e:
+            logger.error(f"Error in second pass transition: {str(e)}")
+            return "I encountered an error preparing the follow-up questions. Please try again."
+
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
@@ -191,12 +241,10 @@ class OpenAIAssistant:
                     return
 
                 # Check for second pass trigger and get follow-up questions
-                is_second = self.is_second_pass(conversation.id)
-                follow_up_questions = None
-                if is_second and self.detect_second_pass_trigger(user_message):
-                    follow_up_questions = self.get_follow_up_questions(conversation.id)
-                    if follow_up_questions:
-                        logger.info("Using follow-up questions for second pass interview")
+                if self.detect_second_pass_trigger(user_message):
+                    transition_message = self.handle_second_pass_transition(conversation.id)
+                    yield transition_message
+                    return
 
                 # Create a new thread
                 try:
@@ -228,21 +276,8 @@ class OpenAIAssistant:
                     logger.info(f"🔹 Loading conversation history ({len(history)} messages) into thread {thread.id}")
 
                     # Format instructions based on conversation state
-                    if is_second and follow_up_questions:
-                        instructions = f"""[INSTRUCTIONS]
-This is a follow-up interview session. Focus on asking these specific questions to gather missing information:
+                    instructions = "[INSTRUCTIONS]\nConduct the initial structured interview following the standard protocol.\n[/INSTRUCTIONS]"
 
-{json.dumps(follow_up_questions, indent=2)}
-
-Guidelines:
-1. Only ask questions from the provided list
-2. Ask one question at a time
-3. Acknowledge and incorporate the user's previous responses
-4. If a topic is sufficiently covered, move to the next question
-5. Once all follow-up questions are addressed, conclude the interview
-[/INSTRUCTIONS]"""
-                    else:
-                        instructions = "[INSTRUCTIONS]\nConduct the initial structured interview following the standard protocol.\n[/INSTRUCTIONS]"
 
                     # Add instructions as first user message
                     self.client.beta.threads.messages.create(

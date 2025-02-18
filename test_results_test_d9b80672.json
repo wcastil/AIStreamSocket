@@ -1,0 +1,18 @@
+{
+  "test_session_id": "test_d9b80672",
+  "conversation_id": 60,
+  "person_model_id": 22,
+  "follow_up_questions": [
+    "Can you describe a situation where you had to find a balance between analytical thinking and intuitive decision-making? How did you approach it?",
+    "In that context, how do you typically weigh data-driven insights against your gut feelings? Can you provide an example?",
+    "Reflecting on your decision-making process, have there been moments when you leaned more towards one approach over the other? What influenced those decisions?",
+    "Shifting gears a bit, how do you stay open to change, especially in a fast-paced environment?",
+    "Can you share an experience where embracing change significantly impacted your personal or professional growth?",
+    "How do you encourage or facilitate openness to change among your team or colleagues?",
+    "Looking forward, how do you plan to continue growing and staying adaptable in the face of new challenges or innovations?"
+  ],
+  "missing_topics": [
+    "decision_making_framework.attributes.analytical_intuitive_balance",
+    "growth_and_learning.attributes.openness_to_change"
+  ]
+}

@@ -11,6 +11,9 @@ class Conversation(db.Model):
     interview_data = db.relationship('InterviewData', backref='conversation', uselist=False, cascade='all, delete-orphan')
     session_id = db.Column(db.String(100), unique=True)  # Added for session tracking
     person_model = db.relationship('PersonModel', backref='conversation', uselist=False, cascade='all, delete-orphan')
+    # Track interview pass explicitly
+    current_pass = db.Column(db.Integer, default=1)  # 1 for first pass, 2 for second pass
+    first_pass_completed = db.Column(db.Boolean, default=False)  # Track first pass completion
 
 class Message(db.Model):
     __tablename__ = 'messages'
