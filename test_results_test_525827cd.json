@@ -1,0 +1,45 @@
+{
+  "test_session_id": "test_525827cd",
+  "conversation_id": 49,
+  "person_model_id": 12,
+  "follow_up_questions": [
+    {
+      "id": 1,
+      "text": "When faced with a tough decision, how do you usually proceed? Do you rely more on data and analysis or do you tend to follow your gut feelings?"
+    },
+    {
+      "id": 2,
+      "text": "Can you describe a time when you had to adapt to a significant change? How did you approach the situation, and what was the outcome?"
+    },
+    {
+      "id": 3,
+      "text": "Have you ever found yourself disagreeing with a popular opinion or trend within your field or social circle? How did you navigate that situation, and what was the impact of holding your ground?"
+    },
+    {
+      "id": 4,
+      "text": "Can you share an occasion where you had to deal with two seemingly contradictory ideas or directions at the same time? How did you reconcile or manage these paradoxes?"
+    },
+    {
+      "id": 5,
+      "text": "How do you balance between analytical and intuitive approaches in your daily life? Can you give an example?"
+    },
+    {
+      "id": 6,
+      "text": "What strategies do you employ to stay open to new ideas and perspectives, especially when they challenge your existing beliefs or ways of doing things?"
+    },
+    {
+      "id": 7,
+      "text": "Could you tell me about a time when acting against conventional wisdom led to a breakthrough or a valuable lesson learned?"
+    },
+    {
+      "id": 8,
+      "text": "In situations where you are presented with information or scenarios that conflict, how do you decide which path to follow? Could you share a specific example?"
+    }
+  ],
+  "missing_topics": [
+    "decision_making_framework.attributes.analytical_intuitive_balance",
+    "growth_and_learning.attributes.openness_to_change",
+    "creativity_and_divergence.attributes.contrarian_tendencies",
+    "creativity_and_divergence.attributes.paradox_handling"
+  ]
+}
