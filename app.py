@@ -6,7 +6,6 @@ from flask_cors import CORS
 import json
 from database import db, init_db
 from session_evaluator import SessionEvaluator
-
 # Update the logging configuration for better visibility
 logging.basicConfig(
     level=logging.INFO,
@@ -167,9 +166,9 @@ def vapi_chat():
 
                 # Process through the assistant with session tracking
                 try:
+                    # First stream all responses
                     for response in assistant.stream_response(last_message, session_id=session_id):
                         content = response if isinstance(response, str) else response.get("content", "")
-
                         chunk_data = {
                             "id": f"chatcmpl-{os.urandom(12).hex()}",
                             "object": "chat.completion.chunk",
@@ -187,7 +186,7 @@ def vapi_chat():
                         }
                         yield f"data: {json.dumps(chunk_data)}\n\n"
 
-                    # Send completion before evaluation
+                    # Send completion message
                     completion_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
                         "object": "chat.completion.chunk",
@@ -203,30 +202,34 @@ def vapi_chat():
                     logger.info(f"VAPI response completed for session {session_id}")
                     yield f"data: {json.dumps(completion_data)}\n\n"
 
-                    # Run evaluation after the stream is properly closed
-                    try:
-                        logger.info(f"Running evaluation for completed session {session_id}")
-                        evaluator = SessionEvaluator()
-                        result = evaluator.analyze_conversation(session_id)
-                        if result['success']:
-                            logger.info(f"Successfully evaluated session {session_id}")
-                        else:
-                            logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
-                    except Exception as e:
-                        logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
-                        # Don't re-raise evaluation errors - they shouldn't affect the response stream
+                    # Schedule evaluation to run after stream is closed
+                    def run_evaluation():
+                        try:
+                            logger.info(f"Running evaluation for completed session {session_id}")
+                            evaluator = SessionEvaluator()
+                            result = evaluator.analyze_conversation(session_id)
+                            if result['success']:
+                                logger.info(f"Successfully evaluated session {session_id}")
+                            else:
+                                logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                        except Exception as e:
+                            logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
+
+                    # Use gevent to run evaluation after response
+                    from gevent import spawn
+                    spawn(run_evaluation)
 
                 except Exception as e:
                     logger.error(f"Error in response streaming: {str(e)}", exc_info=True)
-                    error_response = {
+                    error_data = {
                         "error": {
                             "message": str(e),
                             "type": "streaming_error"
                         },
                         "session_id": session_id
                     }
-                    yield f"data: {json.dumps(error_response)}\n\n"
-                    # Send an error completion to ensure stream closure
+                    yield f"data: {json.dumps(error_data)}\n\n"
+                    # Ensure stream closure
                     error_completion = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
                         "object": "chat.completion.chunk",
