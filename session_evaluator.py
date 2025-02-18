@@ -51,7 +51,7 @@ class SessionEvaluator:
                     {
                         "role": "system",
                         "content": f"""Analyze the interview conversation and extract structured insights about the person.
-                        Follow this exact model structure for the output:
+                        Generate a JSON response following this exact model structure:
 
                         {json.dumps(self.model_template, indent=2)}
 
@@ -63,7 +63,7 @@ class SessionEvaluator:
                         5. Use direct quotes or paraphrased evidence from the conversation where possible
                         6. Mark uncertain interpretations with appropriate qualifiers
 
-                        Return the complete model structure, filling in all fields based on available information.
+                        Your response must be a valid JSON object matching the provided structure.
                         If information is missing or uncertain, indicate this clearly in the relevant fields."""
                     },
                     {"role": "user", "content": formatted_conversation}
