@@ -141,7 +141,7 @@ def vapi_chat():
 
         # Get the last user message as the current query
         last_message = next((msg['content'] for msg in reversed(data['messages'])
-                             if msg['role'] == 'user'), None)
+                            if msg['role'] == 'user'), None)
 
         if not last_message:
             logger.warning("No user message found in VAPI conversation")
@@ -217,8 +217,9 @@ def vapi_chat():
                                 logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
 
                     # Use gevent to run evaluation after response with proper context
-                    from gevent import spawn
-                    spawn(run_evaluation)
+                    from gevent import spawn_later
+                    # Delay evaluation by 5 seconds to prioritize voice interaction
+                    spawn_later(5, run_evaluation)
 
                 except Exception as e:
                     logger.error(f"Error in response streaming: {str(e)}", exc_info=True)
@@ -230,7 +231,6 @@ def vapi_chat():
                         "session_id": session_id
                     }
                     yield f"data: {json.dumps(error_data)}\n\n"
-                    # Ensure stream closure
                     error_completion = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
                         "object": "chat.completion.chunk",
