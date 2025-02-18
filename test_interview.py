@@ -127,7 +127,7 @@ class InterviewTester:
             # Simulate a simple response to trigger the follow-up questions
             responses = []
             for chunk in self.assistant.stream_response(
-                "Let's continue with the follow-up questions.", 
+                "Let's continue with the follow-up questions.",
                 session_id=test_session_id
             ):
                 if isinstance(chunk, str):
@@ -171,7 +171,7 @@ class InterviewTester:
             # Try to start a second pass
             responses = []
             for chunk in self.assistant.stream_response(
-                "Let's continue our conversation.", 
+                "Let's continue our conversation.",
                 session_id=test_session_id
             ):
                 if isinstance(chunk, str):
@@ -185,6 +185,50 @@ class InterviewTester:
         except Exception as e:
             logger.error(f"Error in no-followup scenario: {str(e)}", exc_info=True)
             raise
+
+def load_test_session(test_session_id):
+    """Load a test session and prepare it for continuation"""
+    try:
+        logger.info(f"Loading test session {test_session_id} for continuation")
+        tester = InterviewTester()
+
+        with app.app_context():
+            # Verify the test session exists
+            conversation = Conversation.query.filter_by(session_id=test_session_id).first()
+            if not conversation:
+                logger.error(f"Test session {test_session_id} not found")
+                return None
+
+            # Load test results if they exist
+            test_results_file = f'test_results_{test_session_id}.json'
+            if os.path.exists(test_results_file):
+                with open(test_results_file, 'r') as f:
+                    test_data = json.load(f)
+                logger.info(f"Loaded test data from {test_results_file}")
+            else:
+                logger.warning(f"No test results file found for {test_session_id}")
+                test_data = {}
+
+            # Verify person model exists
+            person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+            if person_model:
+                logger.info(f"Found person model with {len(person_model.follow_up_questions)} follow-up questions")
+            else:
+                logger.warning("No person model found for test session")
+
+            # Return session information
+            return {
+                'session_id': test_session_id,
+                'conversation_id': conversation.id,
+                'messages_count': len(conversation.messages),
+                'has_person_model': bool(person_model),
+                'follow_up_questions': person_model.follow_up_questions if person_model else [],
+                'test_data': test_data
+            }
+
+    except Exception as e:
+        logger.error(f"Error loading test session: {str(e)}", exc_info=True)
+        return None
 
 def run_first_pass_only():
     """Run only the first interview pass test"""
@@ -224,8 +268,22 @@ def run_full_test():
 
 if __name__ == "__main__":
     with app.app_context():
-        # Check if first-pass only flag is provided
-        if len(sys.argv) > 1 and sys.argv[1] == "--first-pass":
-            run_first_pass_only()
+        # Check command line arguments
+        if len(sys.argv) > 1:
+            if sys.argv[1] == "--first-pass":
+                run_first_pass_only()
+            elif sys.argv[1] == "--load-session" and len(sys.argv) > 2:
+                session_info = load_test_session(sys.argv[2])
+                if session_info:
+                    logger.info("✅ Test session loaded successfully:")
+                    logger.info(f"Session ID: {session_info['session_id']}")
+                    logger.info(f"Messages: {session_info['messages_count']}")
+                    logger.info(f"Has person model: {session_info['has_person_model']}")
+                    if session_info['has_person_model']:
+                        logger.info(f"Follow-up questions: {len(session_info['follow_up_questions'])}")
+                else:
+                    logger.error("❌ Failed to load test session")
+            else:
+                run_full_test()
         else:
             run_full_test()
