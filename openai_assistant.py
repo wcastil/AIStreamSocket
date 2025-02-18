@@ -190,19 +190,15 @@ class OpenAIAssistant:
 
                 # Present just the first question
                 first_question = person_model.follow_up_questions[0]
-                message = (
-                    "Great! Let's proceed with our follow-up questions. "
-                    "I'll ask them one at a time to explore each topic thoroughly.\n\n"
-                )
+                message = "Let's begin with the follow-up questions.\n\n"
 
                 if isinstance(first_question, dict):
-                    # Handle scored question format
-                    score = first_question.get('score', 'N/A')
+                    # Use question text only, keep score in backend
                     question = first_question.get('question', '')
-                    message += f"First question (Relevance Score: {score}/10):\n{question}"
+                    message += question
                 else:
                     # Handle string format for backwards compatibility
-                    message += f"First question:\n{first_question}"
+                    message += first_question
 
                 return message
 
@@ -235,13 +231,12 @@ class OpenAIAssistant:
             next_question = current_questions[question_index]
 
             if isinstance(next_question, dict):
-                # Handle scored question format
-                score = next_question.get('score', 'N/A')
+                # Only display the question text, keep score in backend
                 question = next_question.get('question', '')
-                return f"Follow-up question (Relevance Score: {score}/10):\n{question}"
+                return question
             else:
                 # Handle string format for backwards compatibility
-                return f"Follow-up question:\n{next_question}"
+                return next_question
 
         except Exception as e:
             logger.error(f"Error getting next follow-up question: {str(e)}")
