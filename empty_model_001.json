@@ -1,0 +1,98 @@
+{
+  "core_values_and_priorities": {
+    "definition": "",
+    "attributes": {
+      "personal_values": [],
+      "professional_values": [],
+      "prioritization_rules": []
+    },
+    "potential_divergence_points": {
+      "value_behavior_conflicts": "",
+      "evolving_priorities": "",
+      "example": ""
+    }
+  },
+  "personality_and_emotional_profile": {
+    "definition": "",
+    "attributes": {
+      "emotional_regulation": "",
+      "leadership_style": "",
+      "decision_making_tendencies": ""
+    },
+    "example": ""
+  },
+  "decision_making_framework": {
+    "definition": "",
+    "attributes": {
+      "analytical_intuitive_balance": null,
+      "risk_tolerance": "",
+      "timeframe_focus": ""
+    },
+    "potential_divergence_points": {
+      "intuition_override": "",
+      "risk_tolerance_fluctuation": "",
+      "example": ""
+    }
+  },
+  "behavioral_patterns": {
+    "definition": "",
+    "attributes": {
+      "stress_response": "",
+      "conflict_resolution": "",
+      "work_life_balance": ""
+    },
+    "example": "",
+    "potential_divergence_points": {
+      "coping_mechanisms": "",
+      "outlier_behaviors": "",
+      "example": ""
+    }
+  },
+  "contextual_awareness": {
+    "definition": "",
+    "attributes": {
+      "adaptability": "",
+      "external_response": "",
+      "environmental_preferences": ""
+    },
+    "example": ""
+  },
+  "relationships_and_interactions": {
+    "definition": "",
+    "attributes": {
+      "collaboration_style": "",
+      "trust_building": "",
+      "conflict_handling": ""
+    },
+    "example": "",
+    "potential_divergence_points": {
+      "empathy_override": "",
+      "trust_inconsistency": "",
+      "example": ""
+    }
+  },
+  "growth_and_learning": {
+    "definition": "",
+    "attributes": {
+      "preferred_learning": "",
+      "reflection_tendencies": "",
+      "openness_to_change": null
+    },
+    "example": "",
+    "potential_divergence_points": {
+      "feedback_receptiveness": "",
+      "situational_rigidity": "",
+      "example": ""
+    }
+  },
+  "creativity_and_divergence": {
+    "definition": "",
+    "attributes": {
+      "divergent_thinking": "",
+      "contrarian_tendencies": "",
+      "paradox_handling": "",
+      "deviation_conditions": ""
+    },
+    "example": ""
+  }
+}
