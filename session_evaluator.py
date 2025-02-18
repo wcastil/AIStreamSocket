@@ -68,12 +68,17 @@ class SessionEvaluator:
                     {
                         "role": "system",
                         "content": """Analyze the interview conversation and extract structured insights about the person.
+                        Extract any available information, even if incomplete. If a piece of information is mentioned
+                        but not fully explored, include it with a confidence indicator.
+
                         Focus on:
-                        1. Personal and professional values
-                        2. Leadership and decision-making style
-                        3. Communication patterns and preferences
-                        4. Learning and growth mindset
-                        
+                        1. Personal and professional values - even brief mentions count
+                        2. Leadership and decision-making style - look for implicit indicators
+                        3. Communication patterns and preferences - observe from their responses
+                        4. Learning and growth mindset - identify from their approach to questions
+
+                        For each piece of information, include a confidence level (high/medium/low).
+
                         Provide output in JSON format matching this structure:
                         {
                             "personal_values": [],
@@ -91,6 +96,9 @@ class SessionEvaluator:
                             "learning": {
                                 "preferred_style": "",
                                 "growth_mindset": null
+                            },
+                            "confidence_levels": {
+                                "field_name": "high/medium/low"
                             }
                         }"""
                     },
@@ -106,8 +114,8 @@ class SessionEvaluator:
             # Compare with template to identify missing topics
             missing_topics = self.identify_missing_topics(structured_data)
 
-            # Generate follow-up questions
-            follow_up_questions = self.generate_follow_up_questions(missing_topics)
+            # Generate follow-up questions, prioritizing low confidence areas
+            follow_up_questions = self.generate_follow_up_questions(missing_topics, structured_data.get('confidence_levels', {}))
 
             # Store the model
             person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
@@ -144,9 +152,12 @@ class SessionEvaluator:
     def identify_missing_topics(self, structured_data):
         """Compare extracted data with template to identify missing or incomplete topics"""
         missing_topics = []
-        
+        confidence_levels = structured_data.get('confidence_levels', {})
+
         def check_value(value, path):
-            if value is None or value == "" or (isinstance(value, list) and len(value) == 0):
+            if path in confidence_levels and confidence_levels[path] == 'low':
+                missing_topics.append(path)
+            elif value is None or value == "" or (isinstance(value, list) and len(value) == 0):
                 missing_topics.append(path)
             elif isinstance(value, dict):
                 for key, subvalue in value.items():
@@ -157,23 +168,31 @@ class SessionEvaluator:
 
         return missing_topics
 
-    def generate_follow_up_questions(self, missing_topics):
-        """Generate specific follow-up questions for missing topics"""
-        if not missing_topics:
+    def generate_follow_up_questions(self, missing_topics, confidence_levels=None):
+        """Generate specific follow-up questions for missing topics and low confidence areas"""
+        if not missing_topics and not confidence_levels:
             return []
 
         topics_str = "\n".join([f"- {topic}" for topic in missing_topics])
-        
+        if confidence_levels:
+            topics_str += "\nLow confidence areas:\n" + "\n".join(
+                [f"- {topic}" for topic, level in confidence_levels.items() if level == 'low']
+            )
+
         response = self.client.chat.completions.create(
             model="gpt-4-0125-preview",
             messages=[
                 {
                     "role": "system",
                     "content": """Generate specific, open-ended follow-up questions to gather missing information.
-                    Questions should be conversational and encourage detailed responses.
+                    Questions should be:
+                    1. Conversational and natural
+                    2. Designed to elicit detailed responses
+                    3. Prioritized by importance
+                    4. Focused on areas with low confidence or missing data
                     Return questions in JSON array format."""
                 },
-                {"role": "user", "content": f"Generate follow-up questions for these missing topics:\n{topics_str}"}
+                {"role": "user", "content": f"Generate follow-up questions for these topics:\n{topics_str}"}
             ],
             response_format={"type": "json_object"}
         )
