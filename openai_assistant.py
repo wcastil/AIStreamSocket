@@ -259,6 +259,16 @@ class OpenAIAssistant:
                         raise ValueError("Failed to create or retrieve conversation")
 
                     logger.info(f"🔹 Processing message in conversation {conversation.id} with session {conversation.session_id}")
+
+                    # Check if this is a loaded test session and we need to continue from previous state
+                    if conversation.person_model and conversation.first_pass_completed:
+                        logger.info("Detected loaded test session with completed first pass")
+                        # If the message indicates wanting to continue, proceed with second pass
+                        if "continue" in user_message.lower() or "let's begin" in user_message.lower():
+                            transition_message = self.handle_second_pass_transition(conversation.id)
+                            yield transition_message
+                            return
+
                 except Exception as e:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
