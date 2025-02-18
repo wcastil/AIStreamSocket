@@ -44,27 +44,30 @@ class SessionEvaluator:
                 for msg in history
             ])
 
+            # Prepare system prompt
+            system_prompt = f"""Analyze the interview conversation and extract structured insights about the person.
+            Generate a JSON response following this exact model structure:
+
+            {json.dumps(self.model_template, indent=2)}
+
+            Guidelines for analysis:
+            1. For each section, provide detailed analysis within the structure
+            2. For attributes, use specific examples from the conversation
+            3. For potential_divergence_points, identify possible inconsistencies or areas of change
+            4. Keep definitions concise but informative
+            5. Use direct quotes or paraphrased evidence from the conversation where possible
+            6. Mark uncertain interpretations with appropriate qualifiers
+
+            Your response must be a valid JSON object matching the provided structure.
+            If information is missing or uncertain, indicate this clearly in the relevant fields."""
+
             # Process with OpenAI
             response = self.client.chat.completions.create(
                 model="gpt-4-0125-preview",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""Analyze the interview conversation and extract structured insights about the person.
-                        Generate a JSON response following this exact model structure:
-
-                        {json.dumps(self.model_template, indent=2)}
-
-                        Guidelines for analysis:
-                        1. For each section, provide detailed analysis within the structure
-                        2. For attributes, use specific examples from the conversation
-                        3. For potential_divergence_points, identify possible inconsistencies or areas of change
-                        4. Keep definitions concise but informative
-                        5. Use direct quotes or paraphrased evidence from the conversation where possible
-                        6. Mark uncertain interpretations with appropriate qualifiers
-
-                        Your response must be a valid JSON object matching the provided structure.
-                        If information is missing or uncertain, indicate this clearly in the relevant fields."""
+                        "content": system_prompt
                     },
                     {"role": "user", "content": formatted_conversation}
                 ],
@@ -80,6 +83,17 @@ class SessionEvaluator:
 
             # Generate follow-up questions for missing areas
             follow_up_questions = self.generate_follow_up_questions(missing_topics)
+
+            # Prepare debug info
+            debug_info = {
+                "system_prompt": system_prompt,
+                "conversation_history": formatted_conversation,
+                "raw_response": response.choices[0].message.content,
+                "model_used": "gpt-4-0125-preview",
+                "conversation_length": len(history),
+                "missing_fields_count": len(missing_topics),
+                "generated_questions_count": len(follow_up_questions)
+            }
 
             # Store or update the model
             person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
@@ -103,7 +117,8 @@ class SessionEvaluator:
                 "success": True,
                 "model": structured_data,
                 "missing_topics": missing_topics,
-                "follow_up_questions": follow_up_questions
+                "follow_up_questions": follow_up_questions,
+                "debug_info": debug_info
             }
 
         except Exception as e:

@@ -42,6 +42,39 @@
         .json-number { color: #b5cea8; }
         .json-boolean { color: #569cd6; }
         .json-null { color: #569cd6; }
+        .debug-section {
+            margin-top: 40px;
+            border-top: 1px solid #495057;
+            padding-top: 20px;
+        }
+        .debug-info {
+            font-family: monospace;
+            font-size: 0.9em;
+            background: #2c3338;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .debug-label {
+            color: #9cdcfe;
+            font-weight: bold;
+        }
+        .collapsible {
+            cursor: pointer;
+            padding: 10px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            background-color: #343a40;
+        }
+        .debug-content {
+            display: none;
+            overflow: hidden;
+        }
+        .active {
+            background-color: #495057;
+        }
     </style>
 </head>
 <body class="container py-4">
@@ -75,6 +108,32 @@
         {% endfor %}
     </div>
 
+    <div class="debug-section">
+        <button type="button" class="collapsible btn btn-secondary w-100 mb-3">
+            <i class="fas fa-bug"></i> Debug Information
+        </button>
+        <div class="debug-content">
+            <div class="section">
+                <h3>Evaluation Metrics</h3>
+                <div class="debug-info">
+                    <p><span class="debug-label">Model Used:</span> {{ debug_info.model_used }}</p>
+                    <p><span class="debug-label">Conversation Length:</span> {{ debug_info.conversation_length }} messages</p>
+                    <p><span class="debug-label">Missing Fields:</span> {{ debug_info.missing_fields_count }}</p>
+                    <p><span class="debug-label">Generated Questions:</span> {{ debug_info.generated_questions_count }}</p>
+                </div>
+
+                <h3>System Prompt</h3>
+                <pre><code>{{ debug_info.system_prompt }}</code></pre>
+
+                <h3>Conversation History</h3>
+                <pre><code>{{ debug_info.conversation_history }}</code></pre>
+
+                <h3>Raw Response</h3>
+                <pre><code id="rawResponse">{{ debug_info.raw_response }}</code></pre>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Function to format JSON with syntax highlighting
         function formatJSON(elementId) {
@@ -104,9 +163,28 @@
             pre.innerHTML = formatted;
         }
 
-        // Format JSON on page load
+        // Toggle debug section
         document.addEventListener('DOMContentLoaded', function() {
+            var coll = document.getElementsByClassName("collapsible");
+            for (var i = 0; i < coll.length; i++) {
+                coll[i].addEventListener("click", function() {
+                    this.classList.toggle("active");
+                    var content = this.nextElementSibling;
+                    if (content.style.display === "block") {
+                        content.style.display = "none";
+                    } else {
+                        content.style.display = "block";
+                    }
+                });
+            }
+
+            // Format JSON on page load
             formatJSON('personModel');
+            try {
+                formatJSON('rawResponse');
+            } catch(e) {
+                console.log('Raw response is not valid JSON, displaying as plain text');
+            }
         });
     </script>
 </body>
