@@ -2,7 +2,7 @@ import os
 import logging
 import json
 from openai import OpenAI
-from models import InterviewData, Message, Conversation
+from models import InterviewData, Message, Conversation, PersonModel
 from database import db
 import time
 from flask import current_app
@@ -60,6 +60,27 @@ class OpenAIAssistant:
             logger.debug(f"Full conversation history: {json.dumps(history, indent=2)}")
             return history
 
+    def get_follow_up_questions(self, conversation_id):
+        """Retrieve stored follow-up questions for the conversation"""
+        try:
+            person_model = PersonModel.query.filter_by(conversation_id=conversation_id).first()
+            if person_model and person_model.follow_up_questions:
+                logger.info(f"Found {len(person_model.follow_up_questions)} follow-up questions")
+                return person_model.follow_up_questions
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving follow-up questions: {str(e)}")
+            return None
+
+    def is_second_pass(self, conversation_id):
+        """Determine if this is a second-pass interview based on message history"""
+        try:
+            messages = Message.query.filter_by(conversation_id=conversation_id).count()
+            return messages > 0  # If there are previous messages, consider it a second pass
+        except Exception as e:
+            logger.error(f"Error checking interview pass: {str(e)}")
+            return False
+
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
         try:
@@ -69,10 +90,8 @@ class OpenAIAssistant:
                     if conversation_id:
                         conversation = Conversation.query.get(conversation_id)
                     elif session_id:
-                        # Always use get_or_create_conversation when we have a session_id
                         conversation = self.get_or_create_conversation(session_id)
                     else:
-                        # If no session_id provided, this is an error as we should always have one
                         raise ValueError("No session ID provided")
 
                     if not conversation:
@@ -83,6 +102,14 @@ class OpenAIAssistant:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
                     return
+
+                # Check if this is a second pass and get follow-up questions
+                is_second = self.is_second_pass(conversation.id)
+                follow_up_questions = None
+                if is_second:
+                    follow_up_questions = self.get_follow_up_questions(conversation.id)
+                    if follow_up_questions:
+                        logger.info("Using follow-up questions for second pass interview")
 
                 # Create a new thread
                 try:
@@ -112,15 +139,36 @@ class OpenAIAssistant:
                 try:
                     history = self.get_conversation_history(conversation.id)
                     logger.info(f"🔹 Loading conversation history ({len(history)} messages) into thread {thread.id}")
+
+                    # Prepare system message based on interview pass
+                    if is_second and follow_up_questions:
+                        system_content = f"""This is a follow-up interview session. Focus on asking these specific questions to gather missing information:
+
+{json.dumps(follow_up_questions, indent=2)}
+
+Guidelines:
+1. Only ask questions from the provided list
+2. Ask one question at a time
+3. Acknowledge and incorporate the user's previous responses
+4. If a topic is sufficiently covered, move to the next question
+5. Once all follow-up questions are addressed, conclude the interview"""
+                    else:
+                        system_content = """Conduct the initial structured interview following the standard protocol."""
+
+                    # Add system message to thread
+                    self.client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="system",
+                        content=system_content
+                    )
+
+                    # Add conversation history
                     for msg in history:
-                        logger.debug(f"Adding message to thread - Role: {msg['role']}, Content: {msg['content'][:100]}...")
                         self.client.beta.threads.messages.create(
                             thread_id=thread.id,
                             role=msg["role"],
                             content=msg["content"]
                         )
-                    logger.info(f"🔹 Added {len(history)} historical messages to thread for session {session_id}")
-                    logger.debug(f"Thread {thread.id} now contains full history")
                 except Exception as e:
                     logger.error(f"Error adding history to thread: {str(e)}", exc_info=True)
 
@@ -151,8 +199,8 @@ class OpenAIAssistant:
                 # Poll for response and stream it
                 max_retries = 3
                 retry_count = 0
-                max_poll_duration = 30  # Maximum polling duration in seconds
-                poll_interval = 1.0     # Initial polling interval
+                max_poll_duration = 30
+                poll_interval = 1.0
                 start_time = time.time()
 
                 while True:
@@ -206,7 +254,7 @@ class OpenAIAssistant:
                             break
 
                         # Exponential backoff for polling interval
-                        poll_interval = min(poll_interval * 1.5, 3.0)  # Cap at 3 seconds
+                        poll_interval = min(poll_interval * 1.5, 3.0)
                         time.sleep(poll_interval)
 
                     except Exception as e:
@@ -274,7 +322,6 @@ class OpenAIAssistant:
                 logger.info("Interview evaluation completed successfully")
 
                 return evaluation
-
         except Exception as e:
             error_msg = f"Error evaluating interview progress: {str(e)}"
             logger.error(error_msg, exc_info=True)
