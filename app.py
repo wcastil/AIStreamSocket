@@ -166,10 +166,29 @@ def vapi_chat():
                 logger.info(f"Processing VAPI request through assistant with session {session_id}")
 
                 # Process through the assistant with session tracking
-                for response in assistant.stream_response(last_message, session_id=session_id):
-                    content = response if isinstance(response, str) else response.get("content", "")
+                try:
+                    for response in assistant.stream_response(last_message, session_id=session_id):
+                        content = response if isinstance(response, str) else response.get("content", "")
 
-                    chunk_data = {
+                        chunk_data = {
+                            "id": f"chatcmpl-{os.urandom(12).hex()}",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": "custom-assistant",
+                            "session_id": session_id,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": content
+                                },
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
+
+                    # Send completion before evaluation
+                    completion_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
@@ -177,53 +196,61 @@ def vapi_chat():
                         "session_id": session_id,
                         "choices": [{
                             "index": 0,
-                            "delta": {
-                                "role": "assistant",
-                                "content": content
-                            },
-                            "finish_reason": None
+                            "delta": {},
+                            "finish_reason": "stop"
                         }]
                     }
-                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                    logger.info(f"VAPI response completed for session {session_id}")
+                    yield f"data: {json.dumps(completion_data)}\n\n"
 
-                # Run evaluation after the response stream is complete
-                try:
-                    logger.info(f"VAPI session ended for {session_id}, running evaluation")
-                    evaluator = SessionEvaluator()
-                    result = evaluator.analyze_conversation(session_id)
-                    if result['success']:
-                        logger.info(f"Successfully evaluated session {session_id}")
-                    else:
-                        logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                    # Run evaluation after the stream is properly closed
+                    try:
+                        logger.info(f"Running evaluation for completed session {session_id}")
+                        evaluator = SessionEvaluator()
+                        result = evaluator.analyze_conversation(session_id)
+                        if result['success']:
+                            logger.info(f"Successfully evaluated session {session_id}")
+                        else:
+                            logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                    except Exception as e:
+                        logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
+                        # Don't re-raise evaluation errors - they shouldn't affect the response stream
+
                 except Exception as e:
-                    logger.error(f"Error during evaluation at session end: {str(e)}", exc_info=True)
-
-                # Always send completion message, even if evaluation fails
-                completion_data = {
-                    "id": f"chatcmpl-{os.urandom(12).hex()}",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": "custom-assistant",
-                    "session_id": session_id,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "stop"
-                    }]
-                }
-                logger.info(f"VAPI response completed for session {session_id}")
-                yield f"data: {json.dumps(completion_data)}\n\n"
+                    logger.error(f"Error in response streaming: {str(e)}", exc_info=True)
+                    error_response = {
+                        "error": {
+                            "message": str(e),
+                            "type": "streaming_error"
+                        },
+                        "session_id": session_id
+                    }
+                    yield f"data: {json.dumps(error_response)}\n\n"
+                    # Send an error completion to ensure stream closure
+                    error_completion = {
+                        "id": f"chatcmpl-{os.urandom(12).hex()}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "custom-assistant",
+                        "session_id": session_id,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "error"
+                        }]
+                    }
+                    yield f"data: {json.dumps(error_completion)}\n\n"
 
             except Exception as e:
-                logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
-                error_response = json.dumps({
+                logger.error(f"Fatal error in VAPI generator: {str(e)}", exc_info=True)
+                error_data = json.dumps({
                     "error": {
                         "message": str(e),
-                        "type": "api_error"
+                        "type": "fatal_error"
                     },
                     "session_id": session_id
                 })
-                yield f"data: {error_response}\n\n"
+                yield f"data: {error_data}\n\n"
             finally:
                 ctx.pop()
 
