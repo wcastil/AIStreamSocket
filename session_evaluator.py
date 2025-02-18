@@ -28,7 +28,7 @@ class SessionEvaluator:
     def analyze_conversation(self, session_id):
         """Analyze conversation and generate structured insights"""
         try:
-            logger.info(f"Starting conversation analysis for session {session_id}")
+            logger.info(f"Starting interim conversation analysis for session {session_id}")
 
             # Find conversation by session_id
             conversation = Conversation.query.filter_by(session_id=session_id).first()
@@ -50,24 +50,25 @@ class SessionEvaluator:
                 for msg in history
             ])
 
-            # Prepare system prompt
-            system_prompt = f"""Analyze the interview conversation and extract structured insights about the person.
+            # Prepare system prompt with emphasis on interim nature
+            system_prompt = f"""Analyze this ongoing interview conversation and extract current insights about the person.
+            This is a mid-interview evaluation - do not make final conclusions as the interview is still in progress.
             Generate a JSON response following this exact model structure:
 
             {json.dumps(self.model_template, indent=2)}
 
             Guidelines for analysis:
-            1. For each section, provide detailed analysis within the structure
-            2. For attributes, use specific examples from the conversation
-            3. For potential_divergence_points, identify possible inconsistencies or areas of change
-            4. Keep definitions concise but informative
-            5. Use direct quotes or paraphrased evidence from the conversation where possible
-            6. Mark uncertain interpretations with appropriate qualifiers
+            1. For each section, provide analysis based on available information only
+            2. Use "insufficient data" for any attribute without clear evidence
+            3. Mark uncertain interpretations clearly
+            4. Focus on identifying areas needing more exploration
+            5. Consider this an interim assessment that will be refined
+            6. Use direct quotes or paraphrased evidence where available
 
             Your response must be a valid JSON object matching the provided structure.
-            If information is missing or uncertain, indicate this clearly in the relevant fields."""
+            For missing information, use null or empty strings rather than making assumptions."""
 
-            logger.info("Sending analysis request to OpenAI")
+            logger.info("Sending interim analysis request to OpenAI")
             # Process with OpenAI
             response = self.client.chat.completions.create(
                 model="gpt-4-0125-preview",
@@ -88,11 +89,11 @@ class SessionEvaluator:
 
             # Identify missing topics
             missing_topics = self.identify_missing_topics(structured_data)
-            logger.info(f"Identified {len(missing_topics)} missing topics")
+            logger.info(f"Identified {len(missing_topics)} topics needing more exploration")
 
-            # Generate follow-up questions
-            follow_up_questions = self.generate_follow_up_questions(missing_topics)
-            logger.info(f"Generated {len(follow_up_questions)} follow-up questions")
+            # Generate follow-up questions emphasizing ongoing nature
+            follow_up_questions = self.generate_follow_up_questions(missing_topics, is_interim=True)
+            logger.info(f"Generated {len(follow_up_questions)} potential follow-up questions")
 
             # Prepare debug info
             debug_info = {
@@ -102,19 +103,20 @@ class SessionEvaluator:
                 "model_used": "gpt-4-0125-preview",
                 "conversation_length": len(history),
                 "missing_fields_count": len(missing_topics),
-                "generated_questions_count": len(follow_up_questions)
+                "generated_questions_count": len(follow_up_questions),
+                "evaluation_type": "interim"
             }
 
             # Store or update the model
             person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
             if person_model:
-                logger.info("Updating existing person model")
+                logger.info("Updating existing person model with interim assessment")
                 person_model.data_model = structured_data
                 person_model.missing_topics = missing_topics
                 person_model.follow_up_questions = follow_up_questions
                 person_model.debug_info = debug_info
             else:
-                logger.info("Creating new person model")
+                logger.info("Creating new person model from interim assessment")
                 person_model = PersonModel(
                     conversation_id=conversation.id,
                     data_model=structured_data,
@@ -125,22 +127,53 @@ class SessionEvaluator:
                 db.session.add(person_model)
 
             db.session.commit()
-            logger.info(f"Successfully stored person model for session {session_id}")
+            logger.info(f"Successfully stored interim evaluation for session {session_id}")
 
             return {
                 "success": True,
                 "model": structured_data,
                 "missing_topics": missing_topics,
                 "follow_up_questions": follow_up_questions,
-                "debug_info": debug_info
+                "debug_info": debug_info,
+                "evaluation_type": "interim"
             }
 
         except Exception as e:
-            logger.error(f"Error analyzing conversation: {str(e)}", exc_info=True)
+            logger.error(f"Error in interim analysis: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e)
             }
+
+    def generate_follow_up_questions(self, missing_topics, is_interim=False):
+        """Generate specific follow-up questions for missing topics"""
+        if not missing_topics:
+            return []
+
+        topics_str = "\n".join([f"- {topic}" for topic in missing_topics])
+
+        system_message = """Generate natural follow-up questions to explore missing areas.
+        This is part of an ongoing interview - questions should maintain conversational flow.
+
+        Questions should be:
+        1. Open-ended and natural
+        2. Build on previous context
+        3. Encourage detailed responses
+        4. Avoid seeming like a final assessment
+        5. Allow for organic conversation development
+
+        Return questions in JSON array format."""
+
+        response = self.client.chat.completions.create(
+            model="gpt-4-0125-preview",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"Generate natural follow-up questions for these areas:\n{topics_str}"}
+            ],
+            response_format={"type": "json_object"}
+        )
+
+        return json.loads(response.choices[0].message.content).get("questions", [])
 
     def identify_missing_topics(self, structured_data):
         """Compare extracted data with template to identify missing or incomplete topics"""
@@ -166,34 +199,3 @@ class SessionEvaluator:
 
         check_missing_fields(self.model_template, structured_data)
         return missing_topics
-
-    def generate_follow_up_questions(self, missing_topics):
-        """Generate specific follow-up questions for missing topics"""
-        if not missing_topics:
-            return []
-
-        topics_str = "\n".join([f"- {topic}" for topic in missing_topics])
-
-        response = self.client.chat.completions.create(
-            model="gpt-4-0125-preview",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """Generate specific, open-ended follow-up questions to gather missing information.
-                    Questions should be:
-                    1. Conversational and natural
-                    2. Designed to elicit detailed responses
-                    3. Prioritized by importance
-                    4. Focused on understanding the person's:
-                       - Core values and behavioral patterns
-                       - Decision-making processes
-                       - Growth and adaptation capabilities
-                       - Relationship dynamics
-                    Return questions in JSON array format."""
-                },
-                {"role": "user", "content": f"Generate follow-up questions for these missing topics:\n{topics_str}"}
-            ],
-            response_format={"type": "json_object"}
-        )
-
-        return json.loads(response.choices[0].message.content).get("questions", [])

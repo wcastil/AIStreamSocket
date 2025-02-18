@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify, Response, current_ap
 from flask_cors import CORS
 import json
 from database import db, init_db
+from session_evaluator import SessionEvaluator
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -164,9 +165,13 @@ def vapi_chat():
                 assistant = OpenAIAssistant()
                 logger.info(f"Processing VAPI request through assistant with session {session_id}")
 
+                completion_sent = False
+                response_chunks = []
+
                 # Process through the assistant with session tracking
                 for response in assistant.stream_response(last_message, session_id=session_id):
                     content = response if isinstance(response, str) else response.get("content", "")
+                    response_chunks.append(content)
 
                     chunk_data = {
                         "id": f"chatcmpl-{os.urandom(12).hex()}",
@@ -185,21 +190,44 @@ def vapi_chat():
                     }
                     yield f"data: {json.dumps(chunk_data)}\n\n"
 
-                # Send the completion message
-                completion_data = {
-                    "id": f"chatcmpl-{os.urandom(12).hex()}",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": "custom-assistant",
-                    "session_id": session_id,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "stop"
-                    }]
-                }
-                logger.info(f"VAPI response completed for session {session_id}")
-                yield f"data: {json.dumps(completion_data)}\n\n"
+                if not completion_sent:
+                    # Before sending completion, trigger evaluation
+                    try:
+                        evaluator = SessionEvaluator()
+                        full_response = "".join(response_chunks)
+
+                        # Check if this seems like a natural conversation end
+                        if any(phrase in full_response.lower() for phrase in [
+                            "thank you for sharing",
+                            "is there anything else",
+                            "would you like to share more",
+                            "feel free to add"
+                        ]):
+                            logger.info(f"Natural conversation pause detected for session {session_id}, running evaluation")
+                            result = evaluator.analyze_conversation(session_id)
+                            if result['success']:
+                                logger.info(f"Successfully evaluated session {session_id}")
+                            else:
+                                logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                    except Exception as e:
+                        logger.error(f"Error during automatic evaluation: {str(e)}", exc_info=True)
+
+                    # Send the completion message
+                    completion_data = {
+                        "id": f"chatcmpl-{os.urandom(12).hex()}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": "custom-assistant",
+                        "session_id": session_id,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    logger.info(f"VAPI response completed for session {session_id}")
+                    completion_sent = True
+                    yield f"data: {json.dumps(completion_data)}\n\n"
 
             except Exception as e:
                 logger.error(f"Streaming error in VAPI request: {str(e)}", exc_info=True)
