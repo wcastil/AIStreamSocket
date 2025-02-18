@@ -140,9 +140,10 @@ class OpenAIAssistant:
                     history = self.get_conversation_history(conversation.id)
                     logger.info(f"🔹 Loading conversation history ({len(history)} messages) into thread {thread.id}")
 
-                    # Prepare system message based on interview pass
+                    # Format instructions as a user message instead of system message
                     if is_second and follow_up_questions:
-                        system_content = f"""This is a follow-up interview session. Focus on asking these specific questions to gather missing information:
+                        instructions = f"""[INSTRUCTIONS]
+This is a follow-up interview session. Focus on asking these specific questions to gather missing information:
 
 {json.dumps(follow_up_questions, indent=2)}
 
@@ -151,15 +152,16 @@ Guidelines:
 2. Ask one question at a time
 3. Acknowledge and incorporate the user's previous responses
 4. If a topic is sufficiently covered, move to the next question
-5. Once all follow-up questions are addressed, conclude the interview"""
+5. Once all follow-up questions are addressed, conclude the interview
+[/INSTRUCTIONS]"""
                     else:
-                        system_content = """Conduct the initial structured interview following the standard protocol."""
+                        instructions = "[INSTRUCTIONS]\nConduct the initial structured interview following the standard protocol.\n[/INSTRUCTIONS]"
 
-                    # Add system message to thread
+                    # Add instructions as first user message
                     self.client.beta.threads.messages.create(
                         thread_id=thread.id,
-                        role="system",
-                        content=system_content
+                        role="user",
+                        content=instructions
                     )
 
                     # Add conversation history
