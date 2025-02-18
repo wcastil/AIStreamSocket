@@ -6,6 +6,7 @@ from flask_cors import CORS
 import json
 from database import db, init_db
 from session_evaluator import SessionEvaluator
+
 # Update the logging configuration for better visibility
 logging.basicConfig(
     level=logging.INFO,
@@ -218,17 +219,22 @@ def vapi_chat():
                     logger.info(f"VAPI response completed for session {session_id}")
                     yield f"data: {json.dumps(completion_data)}\n\n"
 
-                    # Schedule evaluation to run after stream is closed
+                    # Schedule evaluation to run after stream is closed, but only if appropriate
                     def run_evaluation():
                         with app.app_context():
                             try:
-                                logger.info(f"Running evaluation for completed session {session_id}")
-                                evaluator = SessionEvaluator()
-                                result = evaluator.analyze_conversation(session_id)
-                                if result['success']:
-                                    logger.info(f"Successfully evaluated session {session_id}")
+                                assistant = OpenAIAssistant()
+                                conversation = Conversation.query.filter_by(session_id=session_id).first()
+                                if conversation and assistant._can_run_evaluation(session_id, conversation.id):
+                                    logger.info(f"Running evaluation for completed session {session_id}")
+                                    evaluator = SessionEvaluator()
+                                    result = evaluator.analyze_conversation(session_id)
+                                    if result['success']:
+                                        logger.info(f"Successfully evaluated session {session_id}")
+                                    else:
+                                        logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
                                 else:
-                                    logger.error(f"Failed to evaluate session {session_id}: {result.get('error')}")
+                                    logger.debug(f"Skipping evaluation for session {session_id} - conditions not met")
                             except Exception as e:
                                 logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
 

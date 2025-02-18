@@ -20,6 +20,9 @@ class OpenAIAssistant:
             self._thread_cache = {}  # Session ID to Thread ID mapping
             self._cache_lock = Lock()  # Thread safety for cache operations
             self._message_batch_size = 10  # Number of messages to include in context
+            self._min_messages_for_eval = 5  # Minimum messages before evaluation
+            self._eval_cooldown = 300  # 5 minutes between evaluations
+            self._last_eval_time = {}  # Track last evaluation time per session
 
             if not self.assistant_id:
                 raise ValueError("OPENAI_ASSISTANT_ID environment variable is required")
@@ -79,11 +82,20 @@ class OpenAIAssistant:
             } for msg in messages]
 
     def handle_evaluation_trigger(self, conversation_id, session_id):
-        """Process evaluation request and generate follow-up questions"""
+        """Process evaluation request with improved timing checks"""
         try:
+            # Check if evaluation is appropriate
+            if not self._can_run_evaluation(session_id, conversation_id):
+                return ("I'd like to gather a bit more context before conducting an evaluation. "
+                       "Let's continue with our conversation and I'll analyze it once we have "
+                       "more substantial information to work with.")
+
             result = self.evaluator.analyze_conversation(session_id)
 
             if result['success']:
+                # Update evaluation timestamp
+                self._last_eval_time[session_id] = time.time()
+
                 conversation = Conversation.query.get(conversation_id)
                 if conversation:
                     conversation.first_pass_completed = True
@@ -380,3 +392,38 @@ class OpenAIAssistant:
             error_msg = f"Error evaluating interview progress: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return error_msg
+
+    def _can_run_evaluation(self, session_id, conversation_id):
+        """Check if enough conversation has accumulated for evaluation"""
+        try:
+            # Check cooldown
+            current_time = time.time()
+            if session_id in self._last_eval_time:
+                time_since_last_eval = current_time - self._last_eval_time[session_id]
+                if time_since_last_eval < self._eval_cooldown:
+                    logger.debug(f"Evaluation cooldown active for session {session_id}")
+                    return False
+
+            # Check message count
+            message_count = Message.query.filter_by(conversation_id=conversation_id).count()
+            if message_count < self._min_messages_for_eval:
+                logger.debug(f"Not enough messages ({message_count}) for evaluation")
+                return False
+
+            # Check if previous evaluation exists
+            person_model = PersonModel.query.filter_by(conversation_id=conversation_id).first()
+            if person_model:
+                # If we already have an evaluation, require more new messages
+                messages_since_eval = Message.query.filter(
+                    Message.conversation_id == conversation_id,
+                    Message.created_at > person_model.created_at
+                ).count()
+                if messages_since_eval < self._min_messages_for_eval:
+                    logger.debug(f"Not enough new messages since last evaluation")
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking evaluation eligibility: {str(e)}")
+            return False
