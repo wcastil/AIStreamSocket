@@ -183,17 +183,21 @@ class OpenAIAssistant:
             conversation.current_pass = 2
             db.session.commit()
 
-            # Format transition message with question preview
-            questions_preview = person_model.follow_up_questions[:2]
+            # Present just the first question
+            first_question = person_model.follow_up_questions[0]
             message = (
-                "Great! Let's proceed with the follow-up questions. "
-                f"I have {len(person_model.follow_up_questions)} questions prepared. "
-                "Here's what we'll be exploring:\n\n"
+                "Great! Let's proceed with our follow-up questions. "
+                "I'll ask them one at a time to explore each topic thoroughly.\n\n"
             )
-            if questions_preview:
-                message += "\n".join(f"• {q}" for q in questions_preview)
-                if len(person_model.follow_up_questions) > 2:
-                    message += "\n\n...and more."
+
+            if isinstance(first_question, dict):
+                # Handle scored question format
+                score = first_question.get('score', 'N/A')
+                question = first_question.get('question', '')
+                message += f"First question (Relevance Score: {score}/10):\n{question}"
+            else:
+                # Handle string format for backwards compatibility
+                message += f"First question:\n{first_question}"
 
             return message
 
@@ -201,6 +205,42 @@ class OpenAIAssistant:
             logger.error(f"Error in second pass transition: {str(e)}")
             return "I encountered an error preparing the follow-up questions. Please try again."
 
+
+    def get_next_follow_up_question(self, conversation_id):
+        """Get the next follow-up question in sequence"""
+        try:
+            conversation = Conversation.query.get(conversation_id)
+            if not conversation or not conversation.person_model:
+                return None
+
+            current_questions = conversation.person_model.follow_up_questions
+
+            # Get messages from second pass
+            second_pass_messages = Message.query.filter(
+                Message.conversation_id == conversation_id,
+                Message.created_at >= conversation.updated_at  # Messages after second pass started
+            ).count()
+
+            # Calculate which question to show next
+            question_index = (second_pass_messages // 2)  # Every 2 messages (Q&A) advances to next question
+
+            if question_index >= len(current_questions):
+                return None
+
+            next_question = current_questions[question_index]
+
+            if isinstance(next_question, dict):
+                # Handle scored question format
+                score = next_question.get('score', 'N/A')
+                question = next_question.get('question', '')
+                return f"Follow-up question (Relevance Score: {score}/10):\n{question}"
+            else:
+                # Handle string format for backwards compatibility
+                return f"Follow-up question:\n{next_question}"
+
+        except Exception as e:
+            logger.error(f"Error getting next follow-up question: {str(e)}")
+            return None
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
@@ -251,6 +291,23 @@ class OpenAIAssistant:
                     transition_message = self.handle_second_pass_transition(conversation.id)
                     yield transition_message
                     return
+
+                # If in second pass, check if we need to present the next question
+                if conversation.current_pass == 2:
+                    next_question = self.get_next_follow_up_question(conversation.id)
+                    if next_question:
+                        # Store user's answer to previous question
+                        message = Message(
+                            conversation_id=conversation.id,
+                            role='user',
+                            content=user_message
+                        )
+                        db.session.add(message)
+                        db.session.commit()
+
+                        # Present next question
+                        yield next_question
+                        return
 
                 # Create a new thread
                 try:
