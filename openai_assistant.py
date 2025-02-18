@@ -157,6 +157,34 @@ class OpenAIAssistant:
             logger.error(f"Error getting next follow-up question: {str(e)}")
             return None
 
+    def detect_completion_trigger(self, message):
+        """Check if user message indicates completing first pass"""
+        trigger_phrases = [
+            "mark interview complete",
+            "complete first interview",
+            "end first interview",
+            "finish first pass",
+            "mark first pass complete"
+        ]
+        return any(phrase in message.lower() for phrase in trigger_phrases)
+
+    def handle_completion_trigger(self, conversation_id):
+        """Handle marking the first interview pass as complete"""
+        try:
+            conversation = Conversation.query.get(conversation_id)
+            if not conversation:
+                return "Unable to find the conversation."
+
+            conversation.first_pass_completed = True
+            db.session.commit()
+
+            return ("First interview pass has been marked as complete. "
+                   "You can now start the second interview by saying 'start second interview'.")
+
+        except Exception as e:
+            logger.error(f"Error marking interview complete: {str(e)}")
+            return "I encountered an error while trying to mark the interview as complete."
+
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
         try:
@@ -183,6 +211,11 @@ class OpenAIAssistant:
                 except Exception as e:
                     logger.error(f"Error managing conversation: {str(e)}", exc_info=True)
                     yield f"Error managing conversation: {str(e)}"
+                    return
+
+                if self.detect_completion_trigger(user_message):
+                    completion_response = self.handle_completion_trigger(conversation.id)
+                    yield completion_response
                     return
 
                 if self.detect_evaluation_trigger(user_message):
