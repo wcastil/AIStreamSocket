@@ -133,6 +133,14 @@ class OpenAIAssistant:
                     questions_count = len(person_model.follow_up_questions)
                     topics_count = len(person_model.missing_topics)
                     logger.info(f"✅ Found existing evaluation with {questions_count} follow-up questions for {topics_count} topics")
+
+                    # Mark first pass as completed since evaluation exists
+                    conversation = Conversation.query.get(conversation_id)
+                    if conversation and not conversation.first_pass_completed:
+                        conversation.first_pass_completed = True
+                        db.session.commit()
+                        logger.info(f"Marked first pass as completed for conversation {conversation_id}")
+
                     return (f"I've previously analyzed our conversation and identified {topics_count} areas to explore further. "
                            f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
                            "just let me know and we'll address these areas in detail.")
@@ -144,6 +152,14 @@ class OpenAIAssistant:
                 questions_count = len(result['follow_up_questions'])
                 topics_count = len(result['missing_topics'])
                 logger.info(f"✅ Evaluation successful - Generated {questions_count} follow-up questions for {topics_count} topics")
+
+                # Mark first pass as completed
+                conversation = Conversation.query.get(conversation_id)
+                if conversation:
+                    conversation.first_pass_completed = True
+                    db.session.commit()
+                    logger.info(f"Marked first pass as completed for conversation {conversation_id}")
+
                 return (f"I've analyzed our conversation and identified {topics_count} areas to explore further. "
                        f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
                        "just let me know and we'll address these areas in detail.")
