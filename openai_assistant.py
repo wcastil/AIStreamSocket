@@ -116,6 +116,19 @@ class OpenAIAssistant:
         """Process evaluation request and generate follow-up questions"""
         try:
             logger.info(f"🔍 Running evaluation for session {session_id}")
+
+            # First check if we already have evaluation results
+            with current_app.app_context():
+                person_model = PersonModel.query.filter_by(conversation_id=conversation_id).first()
+                if person_model:
+                    questions_count = len(person_model.follow_up_questions)
+                    topics_count = len(person_model.missing_topics)
+                    logger.info(f"✅ Found existing evaluation with {questions_count} follow-up questions for {topics_count} topics")
+                    return (f"I've previously analyzed our conversation and identified {topics_count} areas to explore further. "
+                           f"I've prepared {questions_count} follow-up questions. When you're ready to continue, "
+                           "just let me know and we'll address these areas in detail.")
+
+            # If no existing evaluation, run a new one
             result = self.evaluator.analyze_conversation(session_id)
 
             if result['success']:
