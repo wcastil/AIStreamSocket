@@ -66,7 +66,7 @@ try:
     db.init_app(app)
 
     # Import models after db initialization
-    from models import Conversation, Message, InterviewData
+    from models import Conversation, Message, InterviewData, PersonModel
 
     # Create all tables within app context
     with app.app_context():
@@ -366,6 +366,31 @@ def evaluate_session(session_id):
             "message": str(e)
         }), 500
 
+
+@app.route('/evaluation-results/<session_id>')
+def view_evaluation_results(session_id):
+    """View evaluation results for a specific session"""
+    try:
+        # Find conversation by session_id
+        conversation = Conversation.query.filter_by(session_id=session_id).first()
+        if not conversation:
+            return "Session not found", 404
+
+        # Get the person model data
+        person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+        if not person_model:
+            return "No evaluation data found for this session", 404
+
+        return render_template('evaluation_results.html',
+                             session_id=session_id,
+                             evaluation_time=person_model.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                             person_model=person_model.data_model,
+                             missing_topics=person_model.missing_topics,
+                             follow_up_questions=person_model.follow_up_questions)
+
+    except Exception as e:
+        logger.error(f"Error viewing evaluation results: {str(e)}")
+        return str(e), 500
 
 @app.errorhandler(404)
 def not_found_error(error):

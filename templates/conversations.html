@@ -76,6 +76,14 @@
                     <div class="session-id">
                         Session ID: {{ conv.session_id }}
                     </div>
+                    {% if conv.session_id %}
+                        <div class="mt-2">
+                            <a href="{{ url_for('view_evaluation_results', session_id=conv.session_id) }}" 
+                               class="btn btn-sm btn-success">
+                                View Evaluation Results
+                            </a>
+                        </div>
+                    {% endif %}
                 </div>
                 <span class="timestamp">
                     Created: {{ conv.created_at }}

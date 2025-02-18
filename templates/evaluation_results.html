@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Evaluation Results</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <style>
+        pre {
+            background-color: #2c3338;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            color: #00ff00;
+        }
+        .section {
+            background-color: #343a40;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .question {
+            background-color: #2c3338;
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #198754;
+        }
+        .missing-topic {
+            display: inline-block;
+            background: #dc3545;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin: 2px;
+            font-size: 0.9em;
+        }
+        .json-key { color: #9cdcfe; }
+        .json-value { color: #ce9178; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+        .json-null { color: #569cd6; }
+    </style>
+</head>
+<body class="container py-4">
+    <h1>Session Evaluation Results</h1>
+    <div class="section">
+        <h2>Session Information</h2>
+        <p><strong>Session ID:</strong> {{ session_id }}</p>
+        <p><strong>Evaluation Time:</strong> {{ evaluation_time }}</p>
+    </div>
+
+    <div class="section">
+        <h2>Person Data Model</h2>
+        <pre><code id="personModel">{{ person_model | tojson(indent=2) }}</code></pre>
+    </div>
+
+    <div class="section">
+        <h2>Missing Topics</h2>
+        <div class="mb-3">
+            {% for topic in missing_topics %}
+            <span class="missing-topic">{{ topic }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Recommended Follow-up Questions</h2>
+        {% for question in follow_up_questions %}
+        <div class="question">
+            {{ question }}
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        // Function to format JSON with syntax highlighting
+        function formatJSON(elementId) {
+            const pre = document.getElementById(elementId);
+            const json = JSON.parse(pre.textContent);
+            const formatted = JSON.stringify(json, null, 2)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, 
+                    function (match) {
+                        let cls = 'json-number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'json-key';
+                            } else {
+                                cls = 'json-string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'json-boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'json-null';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    }
+                );
+            pre.innerHTML = formatted;
+        }
+
+        // Format JSON on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            formatJSON('personModel');
+        });
+    </script>
+</body>
+</html>
