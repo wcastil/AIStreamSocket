@@ -164,42 +164,47 @@ class OpenAIAssistant:
     def handle_second_pass_transition(self, conversation_id):
         """Handle the transition to second pass interview"""
         try:
-            conversation = Conversation.query.get(conversation_id)
-            if not conversation:
-                return "Unable to find the conversation."
+            with current_app.app_context():
+                conversation = Conversation.query.get(conversation_id)
+                if not conversation:
+                    return "Unable to find the conversation."
 
-            # Verify first pass completion and evaluation
-            if not conversation.first_pass_completed:
-                return ("The first interview pass needs to be completed and evaluated "
-                       "before we can proceed with follow-up questions. Would you like "
-                       "to complete the current interview first?")
+                # Ensure conversation is bound to session
+                db.session.add(conversation)
 
-            person_model = conversation.person_model
-            if not person_model or not person_model.follow_up_questions:
-                return ("I don't have any follow-up questions prepared yet. "
-                       "Let's evaluate your responses first by saying 'evaluate interview'.")
+                # Verify first pass completion and evaluation
+                if not conversation.first_pass_completed:
+                    return ("The first interview pass needs to be completed and evaluated "
+                           "before we can proceed with follow-up questions. Would you like "
+                           "to complete the current interview first?")
 
-            # Update pass tracking
-            conversation.current_pass = 2
-            db.session.commit()
+                # Explicitly load person model within session
+                person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+                if not person_model or not person_model.follow_up_questions:
+                    return ("I don't have any follow-up questions prepared yet. "
+                           "Let's evaluate your responses first by saying 'evaluate interview'.")
 
-            # Present just the first question
-            first_question = person_model.follow_up_questions[0]
-            message = (
-                "Great! Let's proceed with our follow-up questions. "
-                "I'll ask them one at a time to explore each topic thoroughly.\n\n"
-            )
+                # Update pass tracking
+                conversation.current_pass = 2
+                db.session.commit()
 
-            if isinstance(first_question, dict):
-                # Handle scored question format
-                score = first_question.get('score', 'N/A')
-                question = first_question.get('question', '')
-                message += f"First question (Relevance Score: {score}/10):\n{question}"
-            else:
-                # Handle string format for backwards compatibility
-                message += f"First question:\n{first_question}"
+                # Present just the first question
+                first_question = person_model.follow_up_questions[0]
+                message = (
+                    "Great! Let's proceed with our follow-up questions. "
+                    "I'll ask them one at a time to explore each topic thoroughly.\n\n"
+                )
 
-            return message
+                if isinstance(first_question, dict):
+                    # Handle scored question format
+                    score = first_question.get('score', 'N/A')
+                    question = first_question.get('question', '')
+                    message += f"First question (Relevance Score: {score}/10):\n{question}"
+                else:
+                    # Handle string format for backwards compatibility
+                    message += f"First question:\n{first_question}"
+
+                return message
 
         except Exception as e:
             logger.error(f"Error in second pass transition: {str(e)}")
@@ -250,6 +255,8 @@ class OpenAIAssistant:
                 try:
                     if conversation_id:
                         conversation = Conversation.query.get(conversation_id)
+                        # Ensure conversation is bound to session
+                        db.session.add(conversation)
                     elif session_id:
                         conversation = self.get_or_create_conversation(session_id)
                     else:
@@ -261,7 +268,8 @@ class OpenAIAssistant:
                     logger.info(f"🔹 Processing message in conversation {conversation.id} with session {conversation.session_id}")
 
                     # Check if this is a loaded test session and we need to continue from previous state
-                    if conversation.person_model and conversation.first_pass_completed:
+                    person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+                    if person_model and conversation.first_pass_completed:
                         logger.info("Detected loaded test session with completed first pass")
                         # If the message indicates wanting to continue, proceed with second pass
                         if "continue" in user_message.lower() or "let's begin" in user_message.lower():
