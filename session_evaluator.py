@@ -28,15 +28,21 @@ class SessionEvaluator:
     def analyze_conversation(self, session_id):
         """Analyze conversation and generate structured insights"""
         try:
+            logger.info(f"Starting conversation analysis for session {session_id}")
+
             # Find conversation by session_id
             conversation = Conversation.query.filter_by(session_id=session_id).first()
             if not conversation:
+                logger.error(f"No conversation found for session {session_id}")
                 raise ValueError(f"No conversation found for session {session_id}")
 
             # Get conversation history
             history = self.get_conversation_history(conversation.id)
             if not history:
+                logger.error("No messages found in conversation")
                 raise ValueError("No messages found in conversation")
+
+            logger.info(f"Retrieved {len(history)} messages for analysis")
 
             # Format conversation for analysis
             formatted_conversation = "\n".join([
@@ -61,6 +67,7 @@ class SessionEvaluator:
             Your response must be a valid JSON object matching the provided structure.
             If information is missing or uncertain, indicate this clearly in the relevant fields."""
 
+            logger.info("Sending analysis request to OpenAI")
             # Process with OpenAI
             response = self.client.chat.completions.create(
                 model="gpt-4-0125-preview",
@@ -76,13 +83,16 @@ class SessionEvaluator:
 
             # Parse the structured insights
             structured_data = json.loads(response.choices[0].message.content)
-            logger.info(f"🔹 Extracted Person Model: {json.dumps(structured_data, indent=2)}")
+            logger.info("Successfully received and parsed OpenAI response")
+            logger.debug(f"Structured data: {json.dumps(structured_data, indent=2)}")
 
-            # Identify missing topics by comparing with template
+            # Identify missing topics
             missing_topics = self.identify_missing_topics(structured_data)
+            logger.info(f"Identified {len(missing_topics)} missing topics")
 
-            # Generate follow-up questions for missing areas
+            # Generate follow-up questions
             follow_up_questions = self.generate_follow_up_questions(missing_topics)
+            logger.info(f"Generated {len(follow_up_questions)} follow-up questions")
 
             # Prepare debug info
             debug_info = {
@@ -98,11 +108,13 @@ class SessionEvaluator:
             # Store or update the model
             person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
             if person_model:
+                logger.info("Updating existing person model")
                 person_model.data_model = structured_data
                 person_model.missing_topics = missing_topics
                 person_model.follow_up_questions = follow_up_questions
                 person_model.debug_info = debug_info
             else:
+                logger.info("Creating new person model")
                 person_model = PersonModel(
                     conversation_id=conversation.id,
                     data_model=structured_data,
