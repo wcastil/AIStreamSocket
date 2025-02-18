@@ -75,13 +75,16 @@ except Exception as e:
 
 # Add shutdown handler
 def shutdown_handler(exception=None):
-    logger.info("Application shutdown initiated")
+    if exception:
+        logger.warning(f"Context teardown due to error: {str(exception)}")
+    else:
+        logger.debug("Request context cleanup initiated")
     try:
         # Cleanup database connections
         db.session.remove()
-        logger.info("Database connections cleaned up")
+        logger.debug("Database connections cleaned up")
     except Exception as e:
-        logger.error(f"Error during shutdown cleanup: {str(e)}", exc_info=True)
+        logger.error(f"Error during cleanup: {str(e)}", exc_info=True)
 
 # Register shutdown handler
 app.teardown_appcontext(shutdown_handler)
