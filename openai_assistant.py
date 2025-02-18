@@ -143,10 +143,8 @@ class OpenAIAssistant:
                 Message.created_at >= conversation.updated_at
             ).count()
 
-            question_index = (second_pass_messages // 2)
-
-            if question_index >= len(current_questions):
-                return "Thank you for sharing your experiences and insights. This concludes our interview. Your responses have been very helpful, and I appreciate your time and openness in discussing these topics."
+            # Calculate which question to ask next, cycling through the list
+            question_index = (second_pass_messages // 2) % len(current_questions)
 
             next_question = current_questions[question_index]
             if isinstance(next_question, dict):
@@ -184,6 +182,19 @@ class OpenAIAssistant:
         except Exception as e:
             logger.error(f"Error marking interview complete: {str(e)}")
             return "I encountered an error while trying to mark the interview as complete."
+
+    def detect_end_interview_trigger(self, message):
+        """Check if user message indicates wanting to end the interview"""
+        trigger_phrases = [
+            "end interview",
+            "finish interview",
+            "conclude interview",
+            "that's all",
+            "we're done",
+            "wrap up"
+        ]
+        return any(phrase in message.lower() for phrase in trigger_phrases)
+
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream responses from the OpenAI Assistant API with conversation tracking"""
@@ -229,6 +240,11 @@ class OpenAIAssistant:
                     return
 
                 if conversation.current_pass == 2:
+                    # Check if user wants to end the interview
+                    if self.detect_end_interview_trigger(user_message):
+                        yield "Thank you for your time and detailed responses. This concludes our interview. Your insights have been very valuable."
+                        return
+
                     message = Message(
                         conversation_id=conversation.id,
                         role='user',
