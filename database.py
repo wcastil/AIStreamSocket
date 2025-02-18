@@ -21,6 +21,9 @@ def init_db(app):
         db.init_app(app)
 
         with app.app_context():
+            # Import models here to avoid circular imports
+            from models import Conversation, Message, InterviewData, PersonModel
+
             logger.info("Creating database tables...")
             db.create_all()
             logger.info("Database initialization completed successfully")

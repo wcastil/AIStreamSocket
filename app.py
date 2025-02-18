@@ -4,8 +4,7 @@ import time
 from flask import Flask, render_template, request, jsonify, Response, current_app
 from flask_cors import CORS
 import json
-from database import db
-from session_evaluator import SessionEvaluator
+from database import db, init_db
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -54,18 +53,10 @@ try:
         }
     })
 
-    # Configure SQLAlchemy
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-    }
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    # Initialize database with proper configuration
+    init_db(app)
 
-    # Initialize database first
-    db.init_app(app)
-
-    # Import models after db initialization
+    # Import models after db initialization to avoid circular imports
     from models import Conversation, Message, InterviewData, PersonModel
 
     # Create all tables within app context
