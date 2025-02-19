@@ -83,3 +83,20 @@ class PersonModel(db.Model):
     missing_topics = db.Column(db.JSON, default=list)  # Stores identified missing details
     follow_up_questions = db.Column(db.JSON, default=list)  # Suggested follow-ups
     debug_info = db.Column(db.JSON, default=dict)  # Stores debug information
+
+class SessionThread(db.Model):
+    """Stores OpenAI thread information for session management"""
+    __tablename__ = 'session_threads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(100), unique=True, nullable=False)
+    thread_id = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_activity = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+
+    def touch(self):
+        """Update the last activity timestamp"""
+        self.last_activity = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
