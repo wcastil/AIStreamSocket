@@ -79,24 +79,31 @@ class OpenAIAssistant:
             with current_app.app_context():
                 conversation = Conversation.query.get(conversation_id)
                 if not conversation:
-                    return "Unable to find the conversation."
+                    return {"type": "text", "content": "Unable to find the conversation."}
 
                 conversation.first_pass_completed = True
                 db.session.commit()
 
-                # Return a more detailed response that will be shown in the chat
-                response = [
-                    "✅ First interview pass has been marked as complete.\n\n",
-                    "You can now:\n",
-                    "1. Start the second interview by saying 'start second interview'\n",
-                    "2. View the evaluation results on the conversations page\n",
-                    "3. Continue with additional questions if needed"
-                ]
-                return ''.join(response)
+                # Return a structured response for SSE streaming
+                response = {
+                    "type": "text",
+                    "content": "\n".join([
+                        "✅ First interview pass has been marked as complete.",
+                        "",
+                        "You can now:",
+                        "1. Start the second interview by saying 'start second interview'",
+                        "2. View the evaluation results on the conversations page",
+                        "3. Continue with additional questions if needed"
+                    ])
+                }
+                return response
 
         except Exception as e:
             logger.error(f"Error marking interview complete: {str(e)}")
-            return "I encountered an error while trying to mark the interview as complete."
+            return {
+                "type": "text", 
+                "content": "I encountered an error while trying to mark the interview as complete."
+            }
 
     def stream_response(self, user_message, session_id=None, conversation_id=None):
         """Stream OpenAI responses using server-sent events"""
@@ -118,23 +125,26 @@ class OpenAIAssistant:
                 # Check for special commands before creating/accessing thread
                 if self.detect_completion_trigger(user_message):
                     response = self.handle_completion_trigger(conversation.id)
-                    # Yield the response in chunks for streaming
-                    for chunk in response.split('\n'):
-                        yield chunk + '\n'
+                    if isinstance(response, dict):
+                        yield response
+                    else:
+                        yield {"type": "text", "content": response}
                     return
 
                 elif self.detect_second_pass_trigger(user_message):
                     response = self.handle_second_pass_transition(conversation.id)
-                    # Yield the response in chunks for streaming
-                    for chunk in response.split('\n'):
-                        yield chunk + '\n'
+                    if isinstance(response, dict):
+                        yield response
+                    else:
+                        yield {"type": "text", "content": response}
                     return
 
                 elif self.detect_evaluation_trigger(user_message):
                     response = self.handle_evaluation_trigger(conversation.id, conversation.session_id)
-                    # Yield the response in chunks for streaming
-                    for chunk in response.split('\n'):
-                        yield chunk + '\n'
+                    if isinstance(response, dict):
+                        yield response
+                    else:
+                        yield {"type": "text", "content": response}
                     return
 
                 # Continue with normal message processing...
