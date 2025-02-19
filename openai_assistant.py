@@ -58,126 +58,6 @@ class OpenAIAssistant:
         ]
         return any(phrase in message.lower() for phrase in trigger_phrases)
 
-    def get_or_create_conversation(self, session_id=None):
-        """Get existing conversation or create a new one"""
-        try:
-            with current_app.app_context():
-                if session_id:
-                    conversation = Conversation.query.filter_by(session_id=session_id).first()
-                    if conversation:
-                        return conversation
-
-                conversation = Conversation(session_id=session_id)
-                db.session.add(conversation)
-                db.session.commit()
-                db.session.refresh(conversation)
-                return conversation
-        except Exception as e:
-            logger.error(f"Error in get_or_create_conversation: {str(e)}", exc_info=True)
-            raise
-
-    def get_conversation_history(self, conversation_id):
-        """Retrieve full conversation history"""
-        with current_app.app_context():
-            messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
-            return [{
-                "role": msg.role,
-                "content": msg.content
-            } for msg in messages]
-
-    def handle_evaluation_trigger(self, conversation_id, session_id):
-        """Process evaluation request with improved timing checks"""
-        try:
-            # Check if evaluation is appropriate
-            if not self._can_run_evaluation(session_id, conversation_id):
-                return ("I'd like to gather a bit more context before conducting an evaluation. "
-                       "Let's continue with our conversation and I'll analyze it once we have "
-                       "more substantial information to work with.")
-
-            result = self.evaluator.analyze_conversation(session_id)
-
-            if result['success']:
-                # Update evaluation timestamp
-                self._last_eval_time[session_id] = time.time()
-
-                # Automatically mark first pass as complete when evaluation succeeds
-                conversation = Conversation.query.get(conversation_id)
-                if conversation:
-                    conversation.first_pass_completed = True
-                    db.session.commit()
-
-                return (
-                    "I've analyzed our conversation and identified several areas to explore further. "
-                    "The first interview pass has been marked as complete. "
-                    "When you're ready to continue with the follow-up interview, just say 'start second interview' "
-                    "or use the button on the conversations page."
-                )
-            else:
-                logger.error(f"Evaluation failed: {result['error']}")
-                return "I apologize, but I encountered an error while evaluating our conversation. Would you like to continue with the standard interview format?"
-
-        except Exception as e:
-            logger.error(f"Error in handle_evaluation_trigger: {str(e)}", exc_info=True)
-            return "I encountered an error while trying to evaluate our conversation. Would you like to continue with the standard interview format?"
-
-    def handle_second_pass_transition(self, conversation_id):
-        """Handle the transition to second pass interview"""
-        try:
-            conversation = Conversation.query.get(conversation_id)
-            if not conversation:
-                return "Unable to find the conversation."
-
-            if not conversation.first_pass_completed:
-                return ("The first interview pass needs to be completed and evaluated "
-                       "before we can proceed with follow-up questions. Would you like "
-                       "to complete the current interview first?")
-
-            person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
-            if not person_model or not person_model.follow_up_questions:
-                return ("I don't have any follow-up questions prepared yet. "
-                       "Let's evaluate your responses first by saying 'evaluate interview'.")
-
-            conversation.current_pass = 2
-            db.session.commit()
-
-            first_question = person_model.follow_up_questions[0]
-            message = "Let's begin with the follow-up questions.\n\n"
-            if isinstance(first_question, dict):
-                message += first_question.get('question', '')
-            else:
-                message += first_question
-
-            return message
-
-        except Exception as e:
-            logger.error(f"Error in second pass transition: {str(e)}")
-            return "I encountered an error preparing the follow-up questions. Please try again."
-
-    def get_next_follow_up_question(self, conversation_id):
-        """Get the next follow-up question in sequence"""
-        try:
-            conversation = Conversation.query.get(conversation_id)
-            if not conversation or not conversation.person_model:
-                return None
-
-            current_questions = conversation.person_model.follow_up_questions
-            second_pass_messages = Message.query.filter(
-                Message.conversation_id == conversation_id,
-                Message.created_at >= conversation.updated_at
-            ).count()
-
-            # Calculate which question to ask next, cycling through the list
-            question_index = (second_pass_messages // 2) % len(current_questions)
-
-            next_question = current_questions[question_index]
-            if isinstance(next_question, dict):
-                return next_question.get('question', '')
-            return next_question
-
-        except Exception as e:
-            logger.error(f"Error getting next follow-up question: {str(e)}")
-            return None
-
     def detect_completion_trigger(self, message):
         """Check if user message indicates completing first pass"""
         trigger_phrases = [
@@ -196,63 +76,30 @@ class OpenAIAssistant:
     def handle_completion_trigger(self, conversation_id):
         """Handle marking the first interview pass as complete"""
         try:
-            conversation = Conversation.query.get(conversation_id)
-            if not conversation:
-                return "Unable to find the conversation."
+            with current_app.app_context():
+                conversation = Conversation.query.get(conversation_id)
+                if not conversation:
+                    return "Unable to find the conversation."
 
-            conversation.first_pass_completed = True
-            db.session.commit()
+                conversation.first_pass_completed = True
+                db.session.commit()
 
-            return ("First interview pass has been marked as complete. "
-                   "You can now start the second interview by saying 'start second interview'.")
+                # Return a more detailed response that will be shown in the chat
+                response = [
+                    "✅ First interview pass has been marked as complete.\n\n",
+                    "You can now:\n",
+                    "1. Start the second interview by saying 'start second interview'\n",
+                    "2. View the evaluation results on the conversations page\n",
+                    "3. Continue with additional questions if needed"
+                ]
+                return ''.join(response)
 
         except Exception as e:
             logger.error(f"Error marking interview complete: {str(e)}")
             return "I encountered an error while trying to mark the interview as complete."
 
-    def detect_end_interview_trigger(self, message):
-        """Check if user message indicates wanting to end the interview"""
-        trigger_phrases = [
-            "end interview",
-            "finish interview",
-            "conclude interview",
-            "that's all",
-            "we're done",
-            "wrap up"
-        ]
-        return any(phrase in message.lower() for phrase in trigger_phrases)
-
-
-    def _get_or_create_thread(self, session_id):
-        """Get existing thread or create new one with thread safety"""
-        with self._cache_lock:
-            if session_id in self._thread_cache:
-                try:
-                    # Verify thread still exists
-                    self.client.beta.threads.retrieve(self._thread_cache[session_id])
-                    return self._thread_cache[session_id]
-                except Exception:
-                    logger.info(f"Thread expired for session {session_id}, creating new")
-                    pass
-
-            thread = self.client.beta.threads.create()
-            self._thread_cache[session_id] = thread.id
-            return thread.id
-
-    def _load_recent_messages(self, conversation_id, limit=10):
-        """Load only the most recent messages for context"""
-        with current_app.app_context():
-            messages = Message.query.filter_by(conversation_id=conversation_id)\
-                .order_by(Message.created_at.desc())\
-                .limit(limit)\
-                .all()
-            return [{
-                "role": msg.role,
-                "content": msg.content
-            } for msg in reversed(messages)]  # Reverse to get chronological order
-
     def stream_response(self, user_message, session_id=None, conversation_id=None):
-        """Optimized streaming response handler"""
+        """Stream OpenAI responses using server-sent events"""
         try:
             with current_app.app_context():
                 # Get or create conversation with reduced DB operations
@@ -270,13 +117,27 @@ class OpenAIAssistant:
 
                 # Check for special commands before creating/accessing thread
                 if self.detect_completion_trigger(user_message):
-                    return self.handle_completion_trigger(conversation.id)
-                elif self.detect_second_pass_trigger(user_message):
-                    return self.handle_second_pass_transition(conversation.id)
-                elif self.detect_evaluation_trigger(user_message):
-                    return self.handle_evaluation_trigger(conversation.id, conversation.session_id)
+                    response = self.handle_completion_trigger(conversation.id)
+                    # Yield the response in chunks for streaming
+                    for chunk in response.split('\n'):
+                        yield chunk + '\n'
+                    return
 
-                # Get or create thread for session
+                elif self.detect_second_pass_trigger(user_message):
+                    response = self.handle_second_pass_transition(conversation.id)
+                    # Yield the response in chunks for streaming
+                    for chunk in response.split('\n'):
+                        yield chunk + '\n'
+                    return
+
+                elif self.detect_evaluation_trigger(user_message):
+                    response = self.handle_evaluation_trigger(conversation.id, conversation.session_id)
+                    # Yield the response in chunks for streaming
+                    for chunk in response.split('\n'):
+                        yield chunk + '\n'
+                    return
+
+                # Continue with normal message processing...
                 thread_id = self._get_or_create_thread(session_id)
 
                 # Add message to database
@@ -361,46 +222,101 @@ class OpenAIAssistant:
             logger.error(error_msg, exc_info=True)
             yield error_msg
 
-    def evaluate_interview_progress(self, conversation_id):
-        """Evaluate the full interview session and generate insights"""
+    def handle_evaluation_trigger(self, conversation_id, session_id):
+        """Process evaluation request with improved timing checks"""
         try:
-            with current_app.app_context():
+            # Check if evaluation is appropriate
+            if not self._can_run_evaluation(session_id, conversation_id):
+                return ("I'd like to gather a bit more context before conducting an evaluation. "
+                       "Let's continue with our conversation and I'll analyze it once we have "
+                       "more substantial information to work with.")
+
+            result = self.evaluator.analyze_conversation(session_id)
+
+            if result['success']:
+                # Update evaluation timestamp
+                self._last_eval_time[session_id] = time.time()
+
+                # Automatically mark first pass as complete when evaluation succeeds
                 conversation = Conversation.query.get(conversation_id)
-                if not conversation:
-                    raise ValueError(f"Conversation {conversation_id} not found")
+                if conversation:
+                    conversation.first_pass_completed = True
+                    db.session.commit()
 
-                messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
-
-                conversation_history = []
-                for msg in messages:
-                    conversation_history.append({
-                        "role": msg.role,
-                        "content": msg.content
-                    })
-
-                system_message = """Analyze the interview conversation and identify:
-                1. Key insights and patterns
-                2. Missing or incomplete information
-                3. Suggested follow-up questions
-                4. Areas that need clarification
-
-                Respond with a concise summary and specific recommendations."""
-
-                response = self.client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": system_message},
-                        *conversation_history
-                    ]
+                return (
+                    "I've analyzed our conversation and identified several areas to explore further. "
+                    "The first interview pass has been marked as complete. "
+                    "When you're ready to continue with the follow-up interview, just say 'start second interview' "
+                    "or use the button on the conversations page."
                 )
-
-                evaluation = response.choices[0].message.content
-                return evaluation
+            else:
+                logger.error(f"Evaluation failed: {result['error']}")
+                return "I apologize, but I encountered an error while evaluating our conversation. Would you like to continue with the standard interview format?"
 
         except Exception as e:
-            error_msg = f"Error evaluating interview progress: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return error_msg
+            logger.error(f"Error in handle_evaluation_trigger: {str(e)}", exc_info=True)
+            return "I encountered an error while trying to evaluate our conversation. Would you like to continue with the standard interview format?"
+
+    def handle_second_pass_transition(self, conversation_id):
+        """Handle the transition to second pass interview"""
+        try:
+            conversation = Conversation.query.get(conversation_id)
+            if not conversation:
+                return "Unable to find the conversation."
+
+            if not conversation.first_pass_completed:
+                return ("The first interview pass needs to be completed and evaluated "
+                       "before we can proceed with follow-up questions. Would you like "
+                       "to complete the current interview first?")
+
+            person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+            if not person_model or not person_model.follow_up_questions:
+                return ("I don't have any follow-up questions prepared yet. "
+                       "Let's evaluate your responses first by saying 'evaluate interview'.")
+
+            conversation.current_pass = 2
+            db.session.commit()
+
+            first_question = person_model.follow_up_questions[0]
+            message = "Let's begin with the follow-up questions.\n\n"
+            if isinstance(first_question, dict):
+                message += first_question.get('question', '')
+            else:
+                message += first_question
+
+            return message
+
+        except Exception as e:
+            logger.error(f"Error in second pass transition: {str(e)}")
+            return "I encountered an error preparing the follow-up questions. Please try again."
+
+    def _get_or_create_thread(self, session_id):
+        """Get existing thread or create new one with thread safety"""
+        with self._cache_lock:
+            if session_id in self._thread_cache:
+                try:
+                    # Verify thread still exists
+                    self.client.beta.threads.retrieve(self._thread_cache[session_id])
+                    return self._thread_cache[session_id]
+                except Exception:
+                    logger.info(f"Thread expired for session {session_id}, creating new")
+                    pass
+
+            thread = self.client.beta.threads.create()
+            self._thread_cache[session_id] = thread.id
+            return thread.id
+
+    def _load_recent_messages(self, conversation_id, limit=10):
+        """Load only the most recent messages for context"""
+        with current_app.app_context():
+            messages = Message.query.filter_by(conversation_id=conversation_id)\
+                .order_by(Message.created_at.desc())\
+                .limit(limit)\
+                .all()
+            return [{
+                "role": msg.role,
+                "content": msg.content
+            } for msg in reversed(messages)]  # Reverse to get chronological order
 
     def _can_run_evaluation(self, session_id, conversation_id):
         """Check if enough conversation has accumulated for evaluation"""
@@ -419,20 +335,20 @@ class OpenAIAssistant:
                 logger.debug(f"Not enough messages ({message_count}) for evaluation")
                 return False
 
-            # Check if previous evaluation exists
-            person_model = PersonModel.query.filter_by(conversation_id=conversation_id).first()
-            if person_model:
-                # If we already have an evaluation, require more new messages
-                messages_since_eval = Message.query.filter(
-                    Message.conversation_id == conversation_id,
-                    Message.created_at > person_model.created_at
-                ).count()
-                if messages_since_eval < self._min_messages_for_eval:
-                    logger.debug(f"Not enough new messages since last evaluation")
-                    return False
-
             return True
 
         except Exception as e:
             logger.error(f"Error checking evaluation eligibility: {str(e)}")
             return False
+
+    def detect_end_interview_trigger(self, message):
+        """Check if user message indicates wanting to end the interview"""
+        trigger_phrases = [
+            "end interview",
+            "finish interview",
+            "conclude interview",
+            "that's all",
+            "we're done",
+            "wrap up"
+        ]
+        return any(phrase in message.lower() for phrase in trigger_phrases)
