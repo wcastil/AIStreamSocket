@@ -23,7 +23,7 @@
             border-radius: 4px;
             display: inline-block;
             margin: 5px 0;
-            color: #00ff00;  /* Make session ID more visible */
+            color: #00ff00;
         }
         .timestamp {
             color: #6c757d;
@@ -35,6 +35,21 @@
             border-radius: 12px;
             font-size: 0.9em;
             color: #fff;
+        }
+        .interview-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        .status-incomplete {
+            background-color: #dc3545;
+            color: white;
+        }
+        .status-complete {
+            background-color: #198754;
+            color: white;
         }
         #session-controls {
             position: fixed;
@@ -55,6 +70,11 @@
         .btn-increment:hover {
             background-color: #157347;
         }
+        .interview-controls {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
     </style>
 </head>
 <body class="container py-4">
@@ -72,19 +92,34 @@
                     <h3>
                         Conversation #{{ conv.id }}
                         <span class="message-count">{{ conv.message_count }} messages</span>
+                        <span class="interview-status {% if conv.first_pass_completed %}status-complete{% else %}status-incomplete{% endif %}">
+                            Pass 1: {% if conv.first_pass_completed %}Complete{% else %}Incomplete{% endif %}
+                        </span>
                     </h3>
                     <div class="session-id">
                         Session ID: {{ conv.session_id }}
                     </div>
                     {% if conv.session_id %}
-                        <div class="mt-2">
+                        <div class="interview-controls">
+                            {% if not conv.first_pass_completed %}
+                                <button onclick="markPassComplete('{{ conv.session_id }}')" 
+                                        class="btn btn-sm btn-warning me-2">
+                                    Mark Pass 1 Complete
+                                </button>
+                            {% endif %}
                             <button onclick="runEvaluation('{{ conv.session_id }}')" 
                                     class="btn btn-sm btn-primary me-2">
                                 Run Evaluation
                             </button>
-                            <a href="{{ url_for('view_evaluation_results', session_id=conv.session_id) }}" 
-                               class="btn btn-sm btn-success">
-                                View Evaluation Results
+                            {% if conv.first_pass_completed %}
+                                <button onclick="startSecondInterview('{{ conv.session_id }}')"
+                                        class="btn btn-sm btn-success me-2">
+                                    Start Pass 2
+                                </button>
+                            {% endif %}
+                            <a href="{{ url_for('evaluation_results', session_id=conv.session_id) }}" 
+                               class="btn btn-sm btn-info">
+                                View Results
                             </a>
                         </div>
                     {% endif %}
@@ -126,7 +161,6 @@
 
                 if (data.status === 'success') {
                     alert('Evaluation completed successfully!');
-                    // Refresh the page to show updated results
                     window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
@@ -140,6 +174,53 @@
             }
         }
 
+        async function markPassComplete(sessionId) {
+            try {
+                const button = event.target;
+                button.disabled = true;
+
+                const response = await fetch(`/api/mark-pass-complete/${sessionId}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Interview pass 1 marked as complete!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to mark pass as complete');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function startSecondInterview(sessionId) {
+            try {
+                const button = event.target;
+                button.disabled = true;
+
+                const response = await fetch(`/api/start-second-pass/${sessionId}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    window.location.href = '/'; // Redirect to chat interface
+                } else {
+                    alert('Error: ' + data.message);
+                    button.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to start second interview');
+                button.disabled = false;
+            }
+        }
+
         async function incrementSession() {
             try {
                 const response = await fetch('/admin/session?action=increment', {
@@ -148,7 +229,6 @@
                 const data = await response.json();
                 if (data.new_session) {
                     alert('Session updated! New session ID: ' + data.new_session);
-                    // Reload the page to show the latest conversations
                     window.location.reload();
                 }
             } catch (error) {

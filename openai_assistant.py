@@ -96,6 +96,7 @@ class OpenAIAssistant:
                 # Update evaluation timestamp
                 self._last_eval_time[session_id] = time.time()
 
+                # Automatically mark first pass as complete when evaluation succeeds
                 conversation = Conversation.query.get(conversation_id)
                 if conversation:
                     conversation.first_pass_completed = True
@@ -103,7 +104,9 @@ class OpenAIAssistant:
 
                 return (
                     "I've analyzed our conversation and identified several areas to explore further. "
-                    "When you're ready to continue with the follow-up interview, just say 'start second interview'."
+                    "The first interview pass has been marked as complete. "
+                    "When you're ready to continue with the follow-up interview, just say 'start second interview' "
+                    "or use the button on the conversations page."
                 )
             else:
                 logger.error(f"Evaluation failed: {result['error']}")

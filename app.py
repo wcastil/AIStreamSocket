@@ -383,9 +383,10 @@ def view_conversations():
 
             conversations_data.append({
                 'id': conv.id,
-                'session_id': conv.session_id or 'No Session ID',  # Handle None values
+                'session_id': conv.session_id or 'No Session ID',
                 'created_at': conv.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'message_count': len(messages_data),  # Add message count
+                'message_count': len(messages_data),
+                'first_pass_completed': conv.first_pass_completed,
                 'messages': messages_data
             })
 
@@ -394,35 +395,74 @@ def view_conversations():
         logger.error(f"Error viewing conversations: {str(e)}")
         return str(e), 500
 
-@app.route('/api/evaluate-session/<session_id>', methods=['POST'])
-def evaluate_session(session_id):
-    """Trigger post-session evaluation for a specific session"""
+@app.route('/api/mark-pass-complete/<session_id>', methods=['POST'])
+def mark_pass_complete(session_id):
+    """Mark the first interview pass as complete"""
     try:
-        evaluator = SessionEvaluator()
-        result = evaluator.analyze_conversation(session_id)
-
-        if result['success']:
-            return jsonify({
-                "status": "success",
-                "data": {
-                    "model": result['model'],
-                    "missing_topics": result['missing_topics'],
-                    "follow_up_questions": result['follow_up_questions']
-                }
-            }), 200
-        else:
+        conversation = Conversation.query.filter_by(session_id=session_id).first()
+        if not conversation:
             return jsonify({
                 "status": "error",
-                "message": result['error']
-            }), 500
+                "message": "Conversation not found"
+            }), 404
+
+        conversation.first_pass_completed = True
+        db.session.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Interview pass 1 marked as complete"
+        })
 
     except Exception as e:
-        logger.error(f"Error in evaluate_session: {str(e)}", exc_info=True)
+        logger.error(f"Error marking pass complete: {str(e)}", exc_info=True)
         return jsonify({
             "status": "error",
             "message": str(e)
         }), 500
 
+@app.route('/api/start-second-pass/<session_id>', methods=['POST'])
+def start_second_pass(session_id):
+    """Initialize second interview pass"""
+    try:
+        conversation = Conversation.query.filter_by(session_id=session_id).first()
+        if not conversation:
+            return jsonify({
+                "status": "error",
+                "message": "Conversation not found"
+            }), 404
+
+        if not conversation.first_pass_completed:
+            return jsonify({
+                "status": "error",
+                "message": "First pass must be completed before starting second pass"
+            }), 400
+
+        person_model = PersonModel.query.filter_by(conversation_id=conversation.id).first()
+        if not person_model or not person_model.follow_up_questions:
+            return jsonify({
+                "status": "error",
+                "message": "No follow-up questions available. Please run evaluation first."
+            }), 400
+
+        conversation.current_pass = 2
+        db.session.commit()
+
+        # Update the current session to the selected conversation
+        session_manager.current_session = session_id
+
+        return jsonify({
+            "status": "success",
+            "message": "Second pass initialized",
+            "session_id": session_id
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting second pass: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route('/evaluation-results/<session_id>')
 def view_evaluation_results(session_id):
