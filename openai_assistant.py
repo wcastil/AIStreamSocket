@@ -50,7 +50,11 @@ class OpenAIAssistant:
             "start follow-up interview",
             "begin second interview phase",
             "proceed with second interview",
-            "start second phase questions"
+            "start second phase questions",
+            "let's do the follow up",
+            "ready for follow up",
+            "continue with follow up",
+            "move to second interview"
         ]
         return any(phrase in message.lower() for phrase in trigger_phrases)
 
@@ -181,7 +185,11 @@ class OpenAIAssistant:
             "complete first interview",
             "end first interview",
             "finish first pass",
-            "mark first pass complete"
+            "mark first pass complete",
+            "first interview done",
+            "we can move on",
+            "ready for second pass",
+            "done with first interview"
         ]
         return any(phrase in message.lower() for phrase in trigger_phrases)
 
@@ -260,15 +268,13 @@ class OpenAIAssistant:
                 else:
                     raise ValueError("No session ID provided")
 
-                # Quick checks for special commands
-                if any(trigger in user_message.lower() for trigger in 
-                      ["evaluate interview", "start second interview", "mark interview complete"]):
-                    if "evaluate" in user_message.lower():
-                        return self.handle_evaluation_trigger(conversation.id, conversation.session_id)
-                    elif "start second" in user_message.lower():
-                        return self.handle_second_pass_transition(conversation.id)
-                    else:
-                        return self.handle_completion_trigger(conversation.id)
+                # Check for special commands before creating/accessing thread
+                if self.detect_completion_trigger(user_message):
+                    return self.handle_completion_trigger(conversation.id)
+                elif self.detect_second_pass_trigger(user_message):
+                    return self.handle_second_pass_transition(conversation.id)
+                elif self.detect_evaluation_trigger(user_message):
+                    return self.handle_evaluation_trigger(conversation.id, conversation.session_id)
 
                 # Get or create thread for session
                 thread_id = self._get_or_create_thread(session_id)
