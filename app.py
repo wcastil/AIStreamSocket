@@ -6,6 +6,7 @@ from flask_cors import CORS
 import json
 from database import db, init_db
 from session_evaluator import SessionEvaluator
+from thread_manager import ThreadManager
 
 # Update the logging configuration for better visibility
 logging.basicConfig(
@@ -489,6 +490,35 @@ def view_evaluation_results(session_id):
     except Exception as e:
         logger.error(f"Error viewing evaluation results: {str(e)}")
         return str(e), 500
+
+@app.route('/api/thread/info/<session_id>', methods=['GET'])
+def get_thread_info(session_id):
+    """Get information about a session's thread."""
+    try:
+        thread_info = ThreadManager.get_thread_info(session_id)
+        if not thread_info:
+            return jsonify({
+                "status": "error",
+                "message": "Thread not found"
+            }), 404
+
+        return jsonify({
+            "status": "success",
+            "thread": {
+                "thread_id": thread_info['thread_id'],
+                "created_at": thread_info['created_at'].isoformat(),
+                "last_activity": thread_info['last_activity'].isoformat(),
+                "is_active": thread_info['is_active']
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting thread info: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 @app.errorhandler(404)
 def not_found_error(error):
